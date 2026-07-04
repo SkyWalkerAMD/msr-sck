@@ -42,5 +42,5 @@ modprobe msr 2>/dev/null || :
 %{_prefix}/lib/modules-load.d/msr-sck.conf
 
 %changelog
-* Sat Jul 04 2026 SkyWalkerAMD <you@example.com> - 1.0.0-1
+* Sat Jul 04 2026 SkyWalkerAMD <scka7t@gmail.com> - 1.0.0-1
 - Initial release
