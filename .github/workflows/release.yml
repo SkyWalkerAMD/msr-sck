@@ -1,0 +1,60 @@
+name: release
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build deb
+        run: bash packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: deb, path: "*.deb" }
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: "*.deb" }
+
+  build-rpm:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build rpm
+        run: |
+          dnf -y install rpm-build gcc tar gzip
+          mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
+          V=$(sed -n 's/^Version:[[:space:]]*//p' packaging/msr-sck.spec)
+          mkdir -p "/tmp/msr-sck-$V" && cp -r . "/tmp/msr-sck-$V/" && rm -rf "/tmp/msr-sck-$V/.git"
+          tar -C /tmp -czf "/root/rpmbuild/SOURCES/msr-sck-$V.tar.gz" "msr-sck-$V"
+          rpmbuild -ba packaging/msr-sck.spec
+          cp /root/rpmbuild/RPMS/x86_64/*.rpm .
+      - uses: actions/upload-artifact@v4
+        with: { name: rpm, path: "*.rpm" }
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: "*.rpm" }
+
+  apt-repo:
+    needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: deb, path: . }
+      - name: build apt repo
+        run: bash packaging/make-apt-repo.sh
+      - name: publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./apt-repo
+          destination_dir: apt
+          keep_files: false
