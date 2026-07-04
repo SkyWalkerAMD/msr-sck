@@ -6,9 +6,9 @@ Depends: kmod
 Recommends: dmidecode
 Filename: pool/msr-sck_1.0.0-1_amd64.deb
 Size: 21010
-MD5sum: 80cf1623e6706960abdc3794c351575e
-SHA1: 380dc49a616b48bb61d01d21e5e2f8401def2471
-SHA256: d8ec90170b0206e22bc3ba96c73ff933a976b697a3aa7c29ba20083e09b12dfc
+MD5sum: afa164bf0c606ff648582f8ffb8c2029
+SHA1: 28a54422bf183dd7b0f099ab34aecc589f10e2f9
+SHA256: b7c7f2a2bb882834d0e40fe73b265944cc4f5733485bd92a60bf2fa7dd23adf7
 Section: utils
 Priority: optional
 Homepage: https://github.com/GITHUB_USER/msr-sck
