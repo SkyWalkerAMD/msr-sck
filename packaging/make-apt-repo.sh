@@ -14,4 +14,5 @@ Architectures: amd64
 Components: main
 Date: $(date -Ru)
 REL
+printf '<h1>msr-sck apt repository</h1><p>See <a href="https://github.com/SkyWalkerAMD/msr-sck">GitHub</a> for install instructions.</p>' > index.html
 echo "apt repo ready under apt-repo/"
