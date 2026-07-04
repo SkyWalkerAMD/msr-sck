@@ -1,0 +1,20 @@
+Package: msr-sck
+Version: 1.0.0-1
+Architecture: amd64
+Maintainer: SkyWalkerAMD <you@example.com>
+Depends: kmod
+Recommends: dmidecode
+Filename: pool/msr-sck_1.0.0-1_amd64.deb
+Size: 21010
+MD5sum: 80cf1623e6706960abdc3794c351575e
+SHA1: 380dc49a616b48bb61d01d21e5e2f8401def2471
+SHA256: d8ec90170b0206e22bc3ba96c73ff933a976b697a3aa7c29ba20083e09b12dfc
+Section: utils
+Priority: optional
+Homepage: https://github.com/GITHUB_USER/msr-sck
+Description: Read-only hardware monitor for Intel/AMD servers
+ Reports per-socket and per-core voltage, temperature, frequency
+ (core/mesh/IOD/DRAM), power (RAPL, PL1/PL2, PPT), C-state residency and
+ platform security state. Works under Secure Boot / lockdown (integrity).
+ Derived from intel/msr-tools rdmsr.
+
