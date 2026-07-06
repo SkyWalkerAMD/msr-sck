@@ -37,8 +37,8 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/install.s
 **方式二:软件包**(从 [Releases](https://github.com/SkyWalkerAMD/msr-sck/releases) 下载)
 
 ```bash
-sudo dnf install ./msr-sck-1.0.1-1.x86_64.rpm      # Rocky/RHEL/Fedora
-sudo apt install ./msr-sck_1.0.1-1_amd64.deb        # Ubuntu/Debian
+sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.0.1/msr-sck-1.0.1-1.fc44.x86_64.rpm      # Rocky/RHEL/Fedora
+sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.0.1/msr-sck_1.0.1-1_amd64.deb        # Ubuntu/Debian
 ```
 
 **方式三:软件仓库**(添加一次,之后 `dnf/apt install msr-sck` 并自动获得更新)
@@ -46,8 +46,7 @@ sudo apt install ./msr-sck_1.0.1-1_amd64.deb        # Ubuntu/Debian
 Rocky / CentOS Stream / RHEL(COPR):
 
 ```bash
-sudo dnf copr enable skywalkeramd/msr-sck
-sudo dnf install msr-sck
+sudo dnf copr enable skywalkeramd/msr-sck && sudo dnf install msr-sck
 ```
 
 Ubuntu / Debian(GitHub Pages apt 仓库):
