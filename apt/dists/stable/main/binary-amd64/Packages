@@ -1,14 +1,14 @@
 Package: msr-sck
-Version: 1.0.2-1
+Version: 1.0.3-1
 Architecture: amd64
 Maintainer: SkyWalkerAMD <you@example.com>
 Depends: kmod
 Recommends: dmidecode
-Filename: pool/msr-sck_1.0.2-1_amd64.deb
-Size: 23620
-MD5sum: 35e27f8a7d1e3f3ee4e47b5f1f886950
-SHA1: 3189b577f771e3e9340282d595f1e882728579d7
-SHA256: 932a4278d74e93a19238c5f37c49d9378ff8b3090a7d806354f60642fe4e0cbf
+Filename: pool/msr-sck_1.0.3-1_amd64.deb
+Size: 23938
+MD5sum: 942a7a8c9b05d2efbc8bbc87614d3e99
+SHA1: b7702b34fd45ec1e6caee5542de2b361f2402071
+SHA256: e7b1fec46c5b3f8201ca4eacbfb5d241ce910a78936261734df5a816dc52b069
 Section: utils
 Priority: optional
 Homepage: https://github.com/GITHUB_USER/msr-sck
