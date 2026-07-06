@@ -444,7 +444,7 @@ gcc -Wall -O2 "$T/hsmp-msg.c" -o /usr/local/bin/hsmp-msg
 cat > /usr/local/bin/msr-sck <<'MSR_SH'
 #!/bin/bash
 # msr-sck: Intel/AMD read-only hardware monitor (rdmsr wrapper, no writes)
-MSRVER=1.0.1
+MSRVER=1.0.2
 set -e
 LIBEXEC=/usr/libexec/msr-sck
 RDMSR="${RDMSR:-$( [ -x "$LIBEXEC/rdmsr" ] && echo "$LIBEXEC/rdmsr" || command -v rdmsr || echo rdmsr )}"
@@ -470,9 +470,8 @@ case "${1:-}" in
     rm -f /usr/local/bin/msr-sck /usr/local/bin/rdmsr /usr/local/bin/hsmp-msg \
           /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
           /etc/bash_completion.d/msr-sck \
-          /etc/modules-load.d/msr.conf /etc/modules-load.d/msr-sck.conf /usr/lib/modules-load.d/msr-sck.conf \
+          /etc/modules-load.d/msr.conf /etc/modules-load.d/msr-sck.conf /etc/modules-load.d/msr-sck-amd.conf /etc/modules-load.d/msr-sck-sensors.conf /usr/lib/modules-load.d/msr-sck.conf \
           /etc/apt/sources.list.d/msr-sck.list
-    modprobe -r msr 2>/dev/null || true
     if command -v dnf >/dev/null && dnf copr list 2>/dev/null | grep -q msr-sck; then
       dnf -y copr remove skywalkeramd/msr-sck 2>/dev/null || dnf -y copr disable skywalkeramd/msr-sck 2>/dev/null || true
     fi
@@ -618,6 +617,19 @@ intel_sock(){
 amd_p0(){ local v; v=$(rf "$1" 0xC0010064)
   if [ "$FAM" -ge 26 ]; then echo $(( (v & 0xFFF) * 5 ))
   else local f=$((v & 0xFF)) d=$(( (v>>8) & 0x3F )); [ "$d" -eq 0 ] && d=8; echo $(( f*200/d )); fi; }
+amd_vid(){
+  local ps v vid reg
+  ps=$(( $(rf "$1" 0xC0010063) & 7 ))
+  reg=$(printf '0x%X' $(( 0xC0010064 + ps )))
+  v=$(rf "$1" "$reg")
+  if [ "$FAM" -ge 26 ]; then
+    vid=$(bits "$v" 12 8)   # fam26: VID[19:12], V = 0.250 + VID*5mV (calibrated on 9995WX)
+    [ "$vid" -gt 0 ] && wt4 "0.250 + $vid*0.005" || echo ""
+  elif [ "$FAM" -le 23 ]; then
+    vid=$(bits "$v" 14 8)   # fam17h SVI2: VID[21:14], V = 1.55 - VID*6.25mV
+    [ "$vid" -gt 0 ] && [ "$vid" -lt 248 ] && wt4 "1.55 - $vid*0.00625" || echo ""
+  else echo ""; fi
+}
 amd_temp(){
   local h i=0 f t mx=""
   for h in "${HWROOT:-/sys/class/hwmon}"/hwmon*; do
@@ -636,7 +648,7 @@ amd_temp(){
   printf "N/A (need k10temp)"; }
 hsmp_q(){
   local h="${HSMP:-$( [ -x "$LIBEXEC/hsmp-msg" ] && echo "$LIBEXEC/hsmp-msg" || command -v hsmp-msg || echo /usr/local/bin/hsmp-msg )}"
-  [ -e /dev/hsmp ] || modprobe amd_hsmp 2>/dev/null || true
+  [ -e /dev/hsmp ] || modprobe amd_hsmp 2>/dev/null || modprobe hsmp_acpi 2>/dev/null || true
   [ -e /dev/hsmp ] && [ -x "$h" ] && "$h" "$@" 2>/dev/null
 }
 amd_fclk(){
@@ -656,7 +668,8 @@ amd_sock(){
     plm=$(hsmp_q 0x07 1 "$1") || plm=""
     ppt="  PPT $(wt "$pl/1000") W${plm:+ (Max $(wt "$plm/1000") W)}"
   fi
-  printf "  S%s  Temp Max %s  (Vcore: need zenpower/ryzen_smu)%s\n" "$1" "$(amd_temp "$1")" "$ph"
+  local vc; vc=$(amd_vid "$2")
+  printf "  S%s  Temp Max %s  Vcore %s%s\n" "$1" "$(amd_temp "$1")" "${vc:+~$vc V (P-state VID)}${vc:-N/A (fam$FAM VID unverified)}" "$ph"
   local fm="" cl="" bw="" c0=""
   if fm=$(hsmp_q 0x1C 1 "$1"); then fm="  Fmax $(( (fm>>16)&65535 )) MHz / Fmin $(( fm&65535 )) MHz"; else fm=""; fi
   if cl=$(hsmp_q 0x10 1 "$1"); then cl="  CCLK Limit $cl MHz"; else cl=""; fi
@@ -672,6 +685,25 @@ percore(){
   local c base eu=0
   for s in $SOCKETS; do TJ[$s]=$(bits "$(rf "${REP[$s]}" 0x1A2)" 16 8); done
   [ "$VEN" = AuthenticAMD ] && eu=$(bits "$(rf 0 0xC0010299)" 8 5)
+  local -A CCD CCDT PKGMIN
+  if [ "$VEN" = AuthenticAMD ]; then
+    local l3 pk h f lab s=0
+    for c in $CPUS; do
+      l3=$(cat "$CPUROOT/cpu$c/cache/index3/id" 2>/dev/null) || l3=-1
+      CCD[$c]=$l3
+      pk=$(cat "$CPUROOT/cpu$c/topology/physical_package_id" 2>/dev/null || echo 0)
+      if [ "$l3" -ge 0 ] && { [ -z "${PKGMIN[$pk]}" ] || [ "$l3" -lt "${PKGMIN[$pk]}" ]; }; then PKGMIN[$pk]=$l3; fi
+    done
+    for h in "${HWROOT:-/sys/class/hwmon}"/hwmon*; do
+      [ "$(cat "$h/name" 2>/dev/null)" = k10temp ] || continue
+      for f in "$h"/temp[0-9]*_label; do
+        [ -e "$f" ] || continue
+        lab=$(cat "$f")
+        case "$lab" in Tccd[0-9]*) CCDT["$s:$(( ${lab#Tccd} - 1 ))"]=$(( $(cat "${f%_label}_input") / 1000 )) ;; esac
+      done
+      s=$((s+1))
+    done
+  fi
   local -A T1 C61
   for c in $CPUS; do
     M1[$c]=$(rf "$c" 0xE7); A1[$c]=$(rf "$c" 0xE8); T1[$c]=$(rf "$c" 0x10)
@@ -702,7 +734,15 @@ percore(){
       base=$(( $(amd_p0 "$c") / 100 ))
       local e2 dE; e2=$(bits "$(rf "$c" 0xC001029A)" 0 32)
       dE=$(( e2>=E1[$c] ? e2-E1[$c] : e2-E1[$c]+4294967296 ))
-      extra="  $(printf '%6s' "$(wt "($dE) * ($base) * 100000000 / (2^$eu * ($dt))")") W  C0 $(printf '%3d' "$c0m")%"
+      local pk2 rel tp td cd
+      pk2=$(cat "$CPUROOT/cpu$c/topology/physical_package_id" 2>/dev/null || echo 0)
+      if [ "${CCD[$c]}" -ge 0 ] && [ -n "${PKGMIN[$pk2]}" ]; then
+        rel=$(( CCD[$c] - PKGMIN[$pk2] ))
+        tp=${CCDT["$pk2:$rel"]:-}
+        cd=$(printf 'ccd%-2d' "$rel")
+      else tp=""; cd="ccd- "; fi
+      if [ -n "$tp" ]; then td="$(printf '%3d' "$tp")°C"; else td=" N/A "; fi
+      extra="  $(printf '%6s' "$(wt "($dE) * ($base) * 100000000 / (2^$eu * ($dt))")") W  $cd $td  C0 $(printf '%3d' "$c0m")%"
     fi
     printf "  core%-3d %5d MHz%s\n" "$c" $(( base * 100 * bm / 1000 )) "$extra"
   done
@@ -718,7 +758,7 @@ mon(){
   if [ "$VEN" = GenuineIntel ]; then
     echo "  Core      Freq      Temp   Vcore        C0      C6"
   else
-    echo "  Core      Freq       Power       C0"
+    echo "  Core      Freq       Power     CCD-Temp     C0"
   fi
   percore
 }
@@ -728,12 +768,22 @@ case "${1:-mon}" in
   dump) shift; for s in $SOCKETS; do
         printf "  S%s cpu%-3s = 0x%s\n" "$s" "${REP[$s]}" \
           "$("$RDMSR" -p "${REP[$s]}" ${2:+-f $2} -X "$1" 2>/dev/null)"; done ;;
-  vcore) [ "$VEN" = GenuineIntel ] || { echo "AMD 无 MSR 电压读数 (需 zenpower/ryzen_smu)"; exit 1; }
-    echo "== Per-core Vcore (0x198[47:32], 平台若为包级则各核相同) =="
-    for c in $CPUS; do
-      [ "$(siblings "$c" | head -1)" = "$c" ] || continue
-      printf "  core%-3d %s V\n" "$c" "$(wt4 "$(bits "$(rf "$c" 0x198)" 32 16)/8192")"
-    done ;;
+  vcore)
+    if [ "$VEN" = GenuineIntel ]; then
+      echo "== Per-core Vcore (0x198[47:32], 平台若为包级则各核相同) =="
+      for c in $CPUS; do
+        [ "$(siblings "$c" | head -1)" = "$c" ] || continue
+        printf "  core%-3d %s V\n" "$c" "$(wt4 "$(bits "$(rf "$c" 0x198)" 32 16)/8192")"
+      done
+    else
+      v=$(amd_vid 0)
+      [ -n "$v" ] || { echo "fam$FAM P-state VID 布局未验证 (需 zenpower/ryzen_smu 读实测)"; exit 1; }
+      echo "== Per-core Vcore (P-state VID 标称值; per-rail 覆盖与 LLC 不可见, 实测见 hwmon Rails) =="
+      for c in $CPUS; do
+        [ "$(siblings "$c" | head -1)" = "$c" ] || continue
+        printf "  core%-3d ~%s V\n" "$c" "$(amd_vid "$c")"
+      done
+    fi ;;
   -V|version) echo "msr-sck $MSRVER"; exit 0 ;;
   *) echo "Usage: msr-sck [mon|vcore] | dump <reg> [hi:lo] | uninstall [-y] | -V | INT=<sec> msr-sck"; exit 1 ;;
 esac
@@ -751,6 +801,52 @@ COMP_SH
 
 modprobe msr
 mkdir -p /etc/modules-load.d && echo msr > /etc/modules-load.d/msr.conf
+
+if [ "$(awk '/vendor_id/{print $3;exit}' /proc/cpuinfo)" = AuthenticAMD ]; then
+  echo "== AMD platform: setting up k10temp + HSMP =="
+  AMDMODS=""
+  modprobe k10temp 2>/dev/null && AMDMODS="k10temp" || true
+  [ -e /dev/hsmp ] || modprobe amd_hsmp 2>/dev/null || modprobe hsmp_acpi 2>/dev/null || true
+  if [ ! -e /dev/hsmp ]; then
+    SBON=0
+    f=$(ls /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | head -1)
+    [ -n "$f" ] && [ "$(od -An -tu1 "$f" 2>/dev/null | awk '{v=$NF} END{print v}')" = 1 ] && SBON=1
+    if [ "$SBON" = 1 ]; then
+      echo "== Secure Boot ENABLED: unsigned DKMS hsmp module cannot load =="
+      echo "==   disable Secure Boot, or enroll a MOK key so DKMS signs the module (see README) =="
+    else
+      echo "== in-tree amd_hsmp not usable on this CPU, building DKMS amd_hsmp (module: hsmp_acpi) =="
+      HV=2.4
+      if command -v apt-get >/dev/null; then
+        apt-get -y install git build-essential dkms "linux-headers-$(uname -r)"
+      elif command -v dnf >/dev/null; then
+        dnf -y install git gcc make "kernel-devel-$(uname -r)" || dnf -y install git gcc make kernel-devel
+        dnf -y install dkms || { dnf -y install epel-release && dnf -y install dkms; }
+      elif command -v yum >/dev/null; then
+        yum -y install git gcc make "kernel-devel-$(uname -r)" || true
+        yum -y install dkms || { yum -y install epel-release && yum -y install dkms; }
+      fi
+      [ -d "/usr/src/amd_hsmp-$HV" ] || git clone https://github.com/amd/amd_hsmp.git "/usr/src/amd_hsmp-$HV" || echo "== git clone failed (network?) =="
+      if [ -d "/usr/src/amd_hsmp-$HV" ]; then
+        dkms status 2>/dev/null | grep -q "amd_hsmp.*$HV" || dkms add -m amd_hsmp -v "$HV" || true
+        { dkms build -m amd_hsmp -v "$HV" && dkms install -m amd_hsmp -v "$HV"; } || echo "== DKMS build failed, FCLK/PPT will show N/A =="
+        modprobe hsmp_acpi 2>/dev/null || modprobe amd_hsmp 2>/dev/null || true
+      fi
+    fi
+  fi
+  if [ -e /dev/hsmp ]; then
+    H=$(lsmod | awk '$1=="amd_hsmp"||$1=="hsmp_acpi"{print $1;exit}')
+    [ -n "$H" ] && AMDMODS="$AMDMODS $H"
+    echo "== /dev/hsmp OK (${H:-builtin}) =="
+  else
+    echo "== /dev/hsmp still absent: check BIOS HSMP Support (AMD CBS / NBIO), then rerun install.sh =="
+  fi
+  [ -n "$AMDMODS" ] && printf '%s\n' $AMDMODS > /etc/modules-load.d/msr-sck-amd.conf || true
+fi
+
+SENS=""
+for m in nct6775 asus_ec_sensors; do modprobe "$m" 2>/dev/null && SENS="$SENS $m" || true; done
+[ -n "$SENS" ] && printf '%s\n' $SENS > /etc/modules-load.d/msr-sck-sensors.conf || true
 
 echo "== installed: $(/usr/local/bin/msr-sck -V) @ $(awk '/vendor_id/{print $3;exit}' /proc/cpuinfo) =="
 echo "== usage: msr-sck | msr-sck dump <reg> [hi:lo] | msr-sck vcore | msr-sck -V | INT=<sec> msr-sck =="
