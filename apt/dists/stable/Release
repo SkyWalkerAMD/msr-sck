@@ -1,6 +1,18 @@
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Mon, 06 Jul 2026 08:51:32 +0000
 Origin: msr-sck
 Suite: stable
-Codename: stable
-Architectures: amd64
-Components: main
-Date: Mon, 06 Jul 2026 03:58:46 +0000
+MD5Sum:
+ 35b9dfe4ebf6ab4d26a0f4e4b341d7d1              742 main/binary-amd64/Packages
+ 41e3ca30a4d666e8fedd5ba924f4f189              557 main/binary-amd64/Packages.gz
+SHA1:
+ 55d76a76649a8357f97872362578db3353c51669              742 main/binary-amd64/Packages
+ 58963c8a862ecdd9644901c642f11531565d053c              557 main/binary-amd64/Packages.gz
+SHA256:
+ fad764d6c042130a8fbe3a663f15c2cbbd56a6356afd2fb4a546048e85c0d339              742 main/binary-amd64/Packages
+ 4c855d8deef2a97a338272974acb7347869f3949dde41f62a0fb0621fd1b1042              557 main/binary-amd64/Packages.gz
+SHA512:
+ cb4158260181b2d4d9f63081ccb7da6cf53be5ec1705109bbed29f55a977c652b02f103b5627898cc6c2d904f4d373c860e17e4d30918ce9e83ab755a5d1ef7a              742 main/binary-amd64/Packages
+ b1c8906d43b14446f293037eeeb913daa9d4c4bb84f9531d1061457c7b6856c94983bb0d53b9a488a4b83628cbe6d97e621f955b9968caea1b265c92c18fe189              557 main/binary-amd64/Packages.gz

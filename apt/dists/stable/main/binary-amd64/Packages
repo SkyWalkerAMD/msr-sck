@@ -5,10 +5,10 @@ Maintainer: SkyWalkerAMD <you@example.com>
 Depends: kmod
 Recommends: dmidecode
 Filename: pool/msr-sck_1.0.1-1_amd64.deb
-Size: 21578
-MD5sum: 0c8efc9f307fad16ef7259055cf9501f
-SHA1: 0f0b17fd6325d0e90836293587fab8dcb3a9f08b
-SHA256: ed94fa6f6ac352384d9776d969a64e3d7e96289c166cb430b34d97ef5c5a7d19
+Size: 21582
+MD5sum: 00a68185514d3a8c10d6d07eeb126971
+SHA1: caf8f9e0a7ffb77e4e8d996375c75f41b75a2801
+SHA256: 191cda8fdfa6bc3e9140263b68957714242a0ad9309f2778589fa8ebf82af24c
 Section: utils
 Priority: optional
 Homepage: https://github.com/GITHUB_USER/msr-sck
