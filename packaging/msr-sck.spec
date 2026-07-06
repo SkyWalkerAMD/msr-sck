@@ -1,5 +1,5 @@
 Name:           msr-sck
-Version:        1.0.1
+Version:        1.0.2
 Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers (rdmsr-based)
 License:        GPL-2.0-only
@@ -32,6 +32,17 @@ install -D -m644 packaging/msr-sck.modules-load %{buildroot}%{_prefix}/lib/modul
 
 %post
 modprobe msr 2>/dev/null || :
+if grep -q AuthenticAMD /proc/cpuinfo 2>/dev/null; then
+  AMDMODS=""
+  modprobe k10temp 2>/dev/null && AMDMODS="k10temp" || :
+  [ -e /dev/hsmp ] || modprobe amd_hsmp 2>/dev/null || modprobe hsmp_acpi 2>/dev/null || :
+  H=$(lsmod | awk '$1=="amd_hsmp"||$1=="hsmp_acpi"{print $1;exit}')
+  [ -n "$H" ] && AMDMODS="$AMDMODS $H"
+  [ -n "$AMDMODS" ] && printf '%s\n' $AMDMODS > /etc/modules-load.d/msr-sck-amd.conf || :
+fi
+
+%postun
+if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/msr-sck-amd.conf; fi
 
 %files
 %license COPYING
@@ -42,6 +53,14 @@ modprobe msr 2>/dev/null || :
 %{_prefix}/lib/modules-load.d/msr-sck.conf
 
 %changelog
+* Mon Jul 06 2026 SkyWalkerAMD <you@example.com> - 1.0.2-1
+- AMD: Vcore readout via P-state VID decode (fam 1Ah verified on TR PRO 9995WX; fam 17h SVI2)
+- AMD: per-CCD temperature column in per-core view (k10temp + L3 topology mapping)
+- AMD: installer auto-configures k10temp and HSMP (in-tree amd_hsmp or DKMS hsmp_acpi), persists autoload
+- installer: probe board sensor drivers (nct6775 etc.) for voltage rails
+- hsmp autoload falls back to hsmp_acpi; apt repo Release file now carries checksums
+- uninstall no longer hot-unloads the msr module (unload race with concurrent readers)
+
 * Sun Jul 05 2026 SkyWalkerAMD <you@example.com> - 1.0.1-1
 - Fix per-core power overestimation on high-core-count AMD (TSC-based window)
 - Add msr-sck uninstall subcommand, -V works without msr module
