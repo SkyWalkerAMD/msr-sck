@@ -1,18 +1,18 @@
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Mon, 06 Jul 2026 23:22:35 +0000
+Date: Tue, 07 Jul 2026 03:15:30 +0000
 Origin: msr-sck
 Suite: stable
 MD5Sum:
- 677c7aa51eaa4e0d6ea546d1a5647b28              742 main/binary-amd64/Packages
- 6306625dfad40c97a0b8792d6306b0a3              554 main/binary-amd64/Packages.gz
+ 2e5acc9ed77791c7464d63eca2d15256              742 main/binary-amd64/Packages
+ af68470912292ff98daecb45b4a4114f              555 main/binary-amd64/Packages.gz
 SHA1:
- 4607e1a2869da3e558f0bf95b83b8139afa4f30f              742 main/binary-amd64/Packages
- ecf1a95421df51f613eb491c28768ee2a701299c              554 main/binary-amd64/Packages.gz
+ f7d9f3622e55a9b824b9f0696fe52b647989fa67              742 main/binary-amd64/Packages
+ 9edb6f1b3385919d56263bf08c2f0a4f5c3efa0d              555 main/binary-amd64/Packages.gz
 SHA256:
- c798f595d76cd1d50372ba298fb98c07f18210cbbefda31d26ef3750ddd85135              742 main/binary-amd64/Packages
- e7ba04b0e6ca2264d2f2f9ba50056f0db668e7729b644db57b20c9ea9ed57980              554 main/binary-amd64/Packages.gz
+ 9c3c84ced9c5a80313d8129b5014ee395d92586a987da6597973091c44c60fe6              742 main/binary-amd64/Packages
+ 78258da138c00ed1519e3f107e103f69746ce759fca2b91ac639f67b2b2678ae              555 main/binary-amd64/Packages.gz
 SHA512:
- 0742b9de9be9ae47d7b177cd5e31bcaa7a139517c2885e6a725aeda2b37e3b4b1b6e9cfc20cb81fc75d000f2461059d6c6931137940cf2ac7cfaece5949e8bfe              742 main/binary-amd64/Packages
- a9e53dc5a2bb6166c0d3f76630bb4f83a6c80b5db401cbbde3391cf25a9c9b6d6dd6efa588d42cf726ee1b9c758dc59602f56e31edced85b4dc8746f1c81b554              554 main/binary-amd64/Packages.gz
+ b903589a50fe36552ab9f925ab5ba2e3086a8778d979631795399dbe7f5f8482c9f9de0d090dbd6da73dc6d5229321a11abbd1accef6b57fa4516907905bd3c0              742 main/binary-amd64/Packages
+ 628cfa0171f470ad6206bc8c9e1b7c933565d47a95cf0e3ace6a7c23281a93f6f802f4a068e97297c2be4499466c4de8fb063cf0099d1fefd1352925351b2221              555 main/binary-amd64/Packages.gz
