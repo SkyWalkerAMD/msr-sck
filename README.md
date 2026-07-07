@@ -2,7 +2,7 @@
 
 Intel/AMD 服务器与工作站的只读硬件监控工具，基于 [intel/msr-tools](https://github.com/intel/msr-tools) 的 `rdmsr` 派生。纯读取设计，兼容 Secure Boot / kernel lockdown (integrity) 环境。
 
-**当前版本: 1.1.2**
+**当前版本: 1.1.3**
 
 ## 支持平台
 
@@ -50,9 +50,9 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/install.s
 
 ```bash
 # Rocky/RHEL/Fedora
-sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.2/msr-sck-1.1.2-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.3/msr-sck-1.1.3-1.fc44.x86_64.rpm
 # Ubuntu/Debian
-sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.2/msr-sck_1.1.2-1_amd64.deb
+sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.3/msr-sck_1.1.3-1_amd64.deb
 ```
 
 **方式三：软件仓库**（添加一次，之后 `dnf/apt install msr-sck` 并自动获得更新）

@@ -444,7 +444,7 @@ gcc -Wall -O2 "$T/hsmp-msg.c" -o /usr/local/bin/hsmp-msg
 cat > /usr/local/bin/msr-sck <<'MSR_SH'
 #!/bin/bash
 # msr-sck: Intel/AMD read-only hardware monitor (rdmsr wrapper, no writes)
-MSRVER=1.1.2
+MSRVER=1.1.3
 set -e
 LIBEXEC=/usr/libexec/msr-sck
 RDMSR="${RDMSR:-$( [ -x "$LIBEXEC/rdmsr" ] && echo "$LIBEXEC/rdmsr" || command -v rdmsr || echo rdmsr )}"
