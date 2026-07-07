@@ -1,6 +1,6 @@
 # msr-sck
 
-Intel/AMD 服务器与工作站的只读硬件监控工具，基于 [intel/msr-tools](https://github.com/intel/msr-tools) 的 `rdmsr` 派生。纯读取设计，兼容 Secure Boot / kernel lockdown (integrity) 环境。
+Intel/AMD 服务器与工作站的只读硬件监控软件，基于 [intel/msr-tools](https://github.com/intel/msr-tools) 的 `rdmsr` 派生。纯读取设计，兼容 Secure Boot / kernel lockdown (integrity) 环境。
 
 **当前版本: 1.1.3**
 
