@@ -1,12 +1,12 @@
 # msr-sck
 
-面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控工具。以单一命令给出 Platform、每 Socket、每核心三个层次的完整视图，覆盖电压、温度、频率、功耗、C-state 驻留与平台安全状态。纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
+面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控软件。以单一命令给出 Platform、每 Socket、每核心三个层次的完整视图，覆盖电压、温度、频率、功耗、C-state 驻留与平台安全状态。软件采用纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
 
 **当前版本: 1.1.3**
 
 ## 设计原则
 
-- **只读**：仅通过 `/dev/cpu/*/msr` 与 `/dev/hsmp` 读取，从不写入寄存器，不改变系统状态，可安全用于生产环境
+- **只读架构**：仅通过 `/dev/cpu/*/msr` 与 `/dev/hsmp` 读取，从不写入寄存器，不改变系统状态，可安全用于生产环境
 - **诚实输出**：任何字段读取失败时显示 `N/A` 或自动隐藏，绝不输出推测或伪造的数值
 - **零侵入安装**：包管理器安装时不加载内核模块、不修改系统配置，这些留给管理员或可选的一键脚本
 - **跨平台对称**：Intel 与 AMD 采用统一的展示结构，各自读取对应平台的原生接口
@@ -129,7 +129,7 @@ sudo watch -n 3 msr-sck         # 持续刷新
 sudo msr-sck uninstall          # 交互确认，加 -y 跳过
 ```
 
-自动识别安装方式（脚本 / rpm / deb）并完整清除，包括历史版本文件、bash 补全、模块自动加载配置和软件源配置。默认保留 gcc/dmidecode/dkms/git 等系统共享包。由 install.sh 自动配置的 DKMS amd_hsmp 驱动会一并移除（通过标记文件识别），若 amd_hsmp 是你手动安装的则予以保留并提示手动清除命令。已加载的内核模块保留至下次重启（热卸载与并发读取者存在竞态）。工具损坏无法执行时的兜底：
+自动识别安装方式（脚本 / rpm / deb）并完整清除，包括历史版本文件、bash 补全、模块自动加载配置和软件源配置。默认保留 gcc/dmidecode/dkms/git 等系统共享包。由 install.sh 自动配置的 DKMS amd_hsmp 驱动会一并移除（通过标记文件识别），若 amd_hsmp 是你手动安装的则予以保留并提示手动清除命令。已加载的内核模块保留至下次重启（热卸载与并发读取者存在竞态）。软件损坏无法执行时的兜底：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/uninstall.sh | sudo bash
