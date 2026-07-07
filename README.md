@@ -2,7 +2,7 @@
 
 Intel/AMD 服务器与工作站的只读硬件监控工具，基于 [intel/msr-tools](https://github.com/intel/msr-tools) 的 `rdmsr` 派生。纯读取设计，兼容 Secure Boot / kernel lockdown (integrity) 环境。
 
-**当前版本: 1.1.0**
+**当前版本: 1.1.1**
 
 ## 支持平台
 
@@ -50,12 +50,22 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/install.s
 
 ```bash
 # Rocky/RHEL/Fedora
-sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.0/msr-sck-1.1.0-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.1/msr-sck-1.1.1-1.fc44.x86_64.rpm
 # Ubuntu/Debian
-sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.0/msr-sck_1.1.0-1_amd64.deb
+sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.1/msr-sck_1.1.1-1_amd64.deb
 ```
 
 **方式三：软件仓库**（添加一次，之后 `dnf/apt install msr-sck` 并自动获得更新）
+
+最简便的方式是用一键 setup 脚本自动配置好软件源，之后即可用标准的 `dnf install` 或 `apt install`：
+
+```bash
+curl -fsSL https://skywalkeramd.github.io/msr-sck/apt/setup.sh | sudo bash
+sudo dnf install msr-sck    # 或 Debian/Ubuntu: sudo apt install msr-sck
+```
+
+setup 脚本会自动判断发行版，RPM 系启用 COPR，Debian 系写好 apt 源。也可以手动添加：
+
 
 Rocky / CentOS Stream / RHEL（COPR）：
 
