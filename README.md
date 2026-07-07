@@ -1,8 +1,15 @@
 # msr-sck
 
-Intel/AMD 服务器与工作站的只读硬件监控软件，基于 [intel/msr-tools](https://github.com/intel/msr-tools) 的 `rdmsr` 派生。纯读取设计，兼容 Secure Boot / kernel lockdown (integrity) 环境。
+面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控工具。以单一命令给出 Platform、每 Socket、每核心三个层次的完整视图，覆盖电压、温度、频率、功耗、C-state 驻留与平台安全状态。纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
 
 **当前版本: 1.1.3**
+
+## 设计原则
+
+- **只读**：仅通过 `/dev/cpu/*/msr` 与 `/dev/hsmp` 读取，从不写入寄存器，不改变系统状态，可安全用于生产环境
+- **诚实输出**：任何字段读取失败时显示 `N/A` 或自动隐藏，绝不输出推测或伪造的数值
+- **零侵入安装**：包管理器安装时不加载内核模块、不修改系统配置，这些留给管理员或可选的一键脚本
+- **跨平台对称**：Intel 与 AMD 采用统一的展示结构，各自读取对应平台的原生接口
 
 ## 支持平台
 
@@ -24,7 +31,17 @@ Intel/AMD 服务器与工作站的只读硬件监控软件，基于 [intel/msr-t
 
 **每核心**：有效频率（APERF/MPERF）、温度（Intel 每核 DTS，AMD 按 CCD 显示，见下）、Vcore、C0/C6 驻留率（Intel）、核心功耗（AMD）。SMT 开启时自动按物理核聚合去重
 
-字段读取失败时显示 N/A 或自动隐藏，不输出伪造数值。
+## Intel 平台说明
+
+**Vcore**：Intel 提供架构级电压 MSR，msr-sck 直接从 `0x198`（IA32_PERF_STATUS）的 [47:32] 位段读取每核心实测电压，无需任何额外驱动。
+
+**每核温度**：Intel 每个核心有独立数字温度传感器（DTS），逐核温度通过 per-core MSR `0x19C`（IA32_THERM_STATUS）读取，以 TjMax 为基准换算，精确到单核。
+
+**Uncore / Mesh 频率**：Mesh 与 IOD-S/IOD-N 多域 uncore 频率通过 TPMI sysfs 接口读取（含 Min/Max），需要 `intel-uncore-frequency` 或 `intel-uncore-frequency-tpmi` 驱动（内核 5.6+ / 6.5+，RHEL 9 系已回移）。
+
+**功率墙**：PL1/PL2 功率限制及其使能/锁定状态来自 RAPL MSR，包级与 DRAM 功耗同样经 RAPL 读取。OC Lock 状态取自 `0x194`（MSR_FLEX_RATIO）。
+
+Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 uncore-frequency 驱动，无需任何 out-of-tree 组件，在 Secure Boot + lockdown=integrity 下开箱即用。
 
 ## AMD 平台说明
 
@@ -65,7 +82,6 @@ sudo dnf install msr-sck    # 或 Debian/Ubuntu: sudo apt install msr-sck
 ```
 
 setup 脚本会自动判断发行版，RPM 系启用 COPR，Debian 系写好 apt 源。也可以手动添加：
-
 
 Rocky / CentOS Stream / RHEL（COPR）：
 
@@ -123,6 +139,13 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/uninstall
 
 需要 root 与 `msr` 内核模块（安装器已处理）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp，电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景外全部功能在 Secure Boot + lockdown=integrity 下可用，DKMS 模块在 Secure Boot 下需 MOK 签名。
 
+## 项目状态
+
+- **分发渠道**：GitHub Releases（rpm / deb / 源码）、COPR（Fedora / RHEL / EPEL 8-10 / Amazon Linux）、GitHub Pages apt 仓库
+- **Fedora 官方仓库**：审核提交进行中
+
+欢迎通过 [Issues](https://github.com/SkyWalkerAMD/msr-sck/issues) 反馈问题或提交主板 Super I/O 通道映射，以扩充已收录主板列表。
+
 ## License
 
-GPL-2.0。`rdmsr.c` 源自 intel/msr-tools（Copyright Transmeta Corp. / H. Peter Anvin），其余组件为本仓库新增。
+本项目以 GPL-2.0 许可发布。核心的监控逻辑（`msr-sck` 主程序、AMD HSMP 交互 `hsmp-msg.c`、打包与安装脚本）均为原创。底层的单寄存器读取工具 `rdmsr.c` 复用自 [intel/msr-tools](https://github.com/intel/msr-tools)（Copyright Transmeta Corp. / H. Peter Anvin），依 GPL-2.0 保留其原始署名。
