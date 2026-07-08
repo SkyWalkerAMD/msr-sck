@@ -1,8 +1,10 @@
-# msr-sck
+# sckoc
 
 面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控软件。以单一命令给出 Platform、每 Socket、每核心三个层次的完整视图，覆盖电压、温度、频率、功耗、C-state 驻留与平台安全状态。软件采用纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
 
-**当前版本: 1.1.3**
+**当前版本: 2.0.0**
+
+> **项目改名提示**：本项目自 2.0.0 起由 `msr-sck` 更名为 `sckoc`。命令、软件包名与仓库地址均已更新为 `sckoc`。旧版 `msr-sck` 用户请卸载旧包后按下方说明重新安装。底层 MSR 读取程序相应更名为 `readoc`。
 
 ## 设计原则
 
@@ -33,7 +35,7 @@
 
 ## Intel 平台说明
 
-**Vcore**：Intel 提供架构级电压 MSR，msr-sck 直接从 `0x198`（IA32_PERF_STATUS）的 [47:32] 位段读取每核心实测电压，无需任何额外驱动。
+**Vcore**：Intel 提供架构级电压 MSR，sckoc 直接从 `0x198`（IA32_PERF_STATUS）的 [47:32] 位段读取每核心实测电压，无需任何额外驱动。
 
 **每核温度**：Intel 每个核心有独立数字温度传感器（DTS），逐核温度通过 per-core MSR `0x19C`（IA32_THERM_STATUS）读取，以 TjMax 为基准换算，精确到单核。
 
@@ -47,7 +49,7 @@ Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 unc
 
 **Vcore**：AMD 无架构级电压 MSR。默认读数为当前 P-state 的 VID 解码值，即 CPU 向 VRM 请求的**标称电压**，非 SVI 遥测实测值。换算 fam 1Ah 用 `V = 0.250 + VID×5mV`，fam 17h SVI2 用 `V = 1.55 − VID×6.25mV`，fam 19h 因 Zen3/Zen4 混布不做猜测显示 N/A。
 
-需要注意 fam 1Ah（Zen5）的 P-state VID 是全 socket 单一值，**不等于**双 rail BIOS 设置。对已收录的主板，msr-sck 改从板载 Super I/O 读取真实的每 rail 电压。目前已收录 **ASUS Pro WS WRX90E-SAGE SE**（nct6798，`VDDCR_CPU0`=in0、`VDDCR_CPU1`=in6，经 BIOS 电压覆盖增量测试确认），此时 socket 行直接显示两路真实电压。其他主板回退到 P-state 标称值并标注。若需要 SVI 遥测实测，可安装 zenpower/ryzen_smu。
+需要注意 fam 1Ah（Zen5）的 P-state VID 是全 socket 单一值，**不等于**双 rail BIOS 设置。对已收录的主板，sckoc 改从板载 Super I/O 读取真实的每 rail 电压。目前已收录 **ASUS Pro WS WRX90E-SAGE SE**（nct6798，`VDDCR_CPU0`=in0、`VDDCR_CPU1`=in6，经 BIOS 电压覆盖增量测试确认），此时 socket 行直接显示两路真实电压。其他主板回退到 P-state 标称值并标注。若需要 SVI 遥测实测，可安装 zenpower/ryzen_smu。
 
 **每核温度**：AMD 无每核 DTS，温度由 SMU 按 CCD 汇总。per-core 表按核所属 CCD 显示温度，CCD 编号经 L3 拓扑步进归一化（fam26 每 CCD 含两 CCX，L3-id 隔号，已修正为连续 0~N）。若内核 k10temp 尚未提供该型号的 per-CCD 传感器（如 fam26/Zen5 sTR5 在内核 6.8），则回退显示 socket 级 Tctl 并以 `*` 标记。
 
@@ -58,27 +60,27 @@ Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 unc
 **方式一：一键脚本**（任何发行版，克隆仓库或单独下载 install.sh 均可）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/sckoc/main/install.sh | sudo bash
 ```
 
 自包含：自动装依赖（gcc、dmidecode）、编译组件、部署命令与 bash 补全、设置 msr 模块开机加载。AMD 平台额外自动配置 k10temp 与 HSMP（含 DKMS，见上节），并探测板载传感器驱动（nct6775 等）以启用电压 Rails 与真实 Vcore 显示。重复运行即升级，自动清理旧版本。
 
-**方式二：软件包**（从 [Releases](https://github.com/SkyWalkerAMD/msr-sck/releases) 下载）
+**方式二：软件包**（从 [Releases](https://github.com/SkyWalkerAMD/sckoc/releases) 下载）
 
 ```bash
 # Rocky/RHEL/Fedora
-sudo dnf install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.3/msr-sck-1.1.3-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc-2.0.0-1.fc44.x86_64.rpm
 # Ubuntu/Debian
-sudo apt install -y https://github.com/SkyWalkerAMD/msr-sck/releases/download/1.1.3/msr-sck_1.1.3-1_amd64.deb
+sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc_2.0.0-1_amd64.deb
 ```
 
-**方式三：软件仓库**（添加一次，之后 `dnf/apt install msr-sck` 并自动获得更新）
+**方式三：软件仓库**（添加一次，之后 `dnf/apt install sckoc` 并自动获得更新）
 
 最简便的方式是用一键 setup 脚本自动配置好软件源，之后即可用标准的 `dnf install` 或 `apt install`：
 
 ```bash
-curl -fsSL https://skywalkeramd.github.io/msr-sck/apt/setup.sh | sudo bash
-sudo dnf install msr-sck    # 或 Debian/Ubuntu: sudo apt install msr-sck
+curl -fsSL https://skywalkeramd.github.io/sckoc/apt/setup.sh | sudo bash
+sudo dnf install sckoc    # 或 Debian/Ubuntu: sudo apt install sckoc
 ```
 
 setup 脚本会自动判断发行版，RPM 系启用 COPR，Debian 系写好 apt 源。也可以手动添加：
@@ -86,28 +88,28 @@ setup 脚本会自动判断发行版，RPM 系启用 COPR，Debian 系写好 apt
 Rocky / CentOS Stream / RHEL（COPR）：
 
 ```bash
-sudo dnf copr enable skywalkeramd/msr-sck && sudo dnf install msr-sck
+sudo dnf copr enable skywalkeramd/sckoc && sudo dnf install sckoc
 ```
 
 Ubuntu / Debian（GitHub Pages apt 仓库）：
 
 ```bash
-echo "deb [trusted=yes] https://skywalkeramd.github.io/msr-sck/apt stable main" | sudo tee /etc/apt/sources.list.d/msr-sck.list
-sudo apt update && sudo apt install msr-sck
+echo "deb [trusted=yes] https://skywalkeramd.github.io/sckoc/apt stable main" | sudo tee /etc/apt/sources.list.d/sckoc.list
+sudo apt update && sudo apt install sckoc
 ```
 
-注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install msr-sck` 与后续升级即和普通软件一致。自行构建软件包用 `rpmbuild -ba packaging/msr-sck.spec` 或 `bash packaging/build-deb.sh`。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
+注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建软件包用 `rpmbuild -ba packaging/sckoc.spec` 或 `bash packaging/build-deb.sh`。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
 
 ## 使用
 
 ```bash
-sudo msr-sck                    # 完整监控概览（默认 mon）
-sudo msr-sck vcore              # 逐核 / 逐 rail 核心电压
-sudo msr-sck dump 0x198 47:32   # 逐 socket 读任意 MSR 位段
-sudo msr-sck help               # 详细用法与示例
-sudo msr-sck -V                 # 版本
-sudo INT=2 msr-sck              # 采样窗口 2 秒（默认 1 秒）
-sudo watch -n 3 msr-sck         # 持续刷新
+sudo sckoc                    # 完整监控概览（默认 mon）
+sudo sckoc vcore              # 逐核 / 逐 rail 核心电压
+sudo sckoc dump 0x198 47:32   # 逐 socket 读任意 MSR 位段
+sudo sckoc help               # 详细用法与示例
+sudo sckoc -V                 # 版本
+sudo INT=2 sckoc              # 采样窗口 2 秒（默认 1 秒）
+sudo watch -n 3 sckoc         # 持续刷新
 ```
 
 支持 Tab 补全：子命令（mon/vcore/dump/uninstall/help/version）、`dump` 后常用 MSR 寄存器、`uninstall` 后的 `-y` 选项。
@@ -126,13 +128,13 @@ sudo watch -n 3 msr-sck         # 持续刷新
 ## 卸载
 
 ```bash
-sudo msr-sck uninstall          # 交互确认，加 -y 跳过
+sudo sckoc uninstall          # 交互确认，加 -y 跳过
 ```
 
 自动识别安装方式（脚本 / rpm / deb）并完整清除，包括历史版本文件、bash 补全、模块自动加载配置和软件源配置。默认保留 gcc/dmidecode/dkms/git 等系统共享包。由 install.sh 自动配置的 DKMS amd_hsmp 驱动会一并移除（通过标记文件识别），若 amd_hsmp 是你手动安装的则予以保留并提示手动清除命令。已加载的内核模块保留至下次重启（热卸载与并发读取者存在竞态）。软件损坏无法执行时的兜底：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/uninstall.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/sckoc/main/uninstall.sh | sudo bash
 ```
 
 ## 依赖与权限
@@ -144,8 +146,8 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/msr-sck/main/uninstall
 - **分发渠道**：GitHub Releases（rpm / deb / 源码）、COPR（Fedora / RHEL / EPEL 8-10 / Amazon Linux）、GitHub Pages apt 仓库
 - **Fedora 官方仓库**：审核提交进行中
 
-欢迎通过 [Issues](https://github.com/SkyWalkerAMD/msr-sck/issues) 反馈问题或提交主板 Super I/O 通道映射，以扩充已收录主板列表。
+欢迎通过 [Issues](https://github.com/SkyWalkerAMD/sckoc/issues) 反馈问题或提交主板 Super I/O 通道映射，以扩充已收录主板列表。
 
 ## License
 
-本项目以 GPL-2.0 许可发布。核心的监控逻辑（`msr-sck` 主程序、AMD HSMP 交互 `hsmp-msg.c`、打包与安装脚本）均为原创。底层的单寄存器读取工具 `rdmsr.c` 复用自 [intel/msr-tools](https://github.com/intel/msr-tools)（Copyright Transmeta Corp. / H. Peter Anvin），依 GPL-2.0 保留其原始署名。
+本项目以 GPL-2.0 许可发布，全部代码均为原创，包括监控主程序 `sckoc`、MSR 读取程序 `readoc`、AMD HSMP 交互 `hsmp-msg.c` 以及打包与安装脚本。
