@@ -1,4 +1,5 @@
 name: release
+
 on:
   push:
     tags: ["*"]
@@ -12,45 +13,80 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: build deb
         run: bash packaging/build-deb.sh
+
       - uses: actions/upload-artifact@v4
-        with: { name: deb, path: "*.deb" }
-      - name: attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with: { files: "*.deb" }
+        with:
+          name: deb
+          path: "*.deb"
 
   build-rpm:
     runs-on: ubuntu-latest
     container: fedora:latest
     steps:
       - uses: actions/checkout@v4
+
       - name: build rpm
         run: |
           dnf -y install rpm-build gcc tar gzip
+
           mkdir -p "$HOME/rpmbuild/SOURCES"
+
           V=$(sed -n 's/^Version:[[:space:]]*//p' packaging/sckoc.spec)
-          mkdir -p "/tmp/sckoc-$V" && cp -r . "/tmp/sckoc-$V/" && rm -rf "/tmp/sckoc-$V/.git"
+
+          mkdir -p "/tmp/sckoc-$V"
+          cp -r . "/tmp/sckoc-$V/"
+          rm -rf "/tmp/sckoc-$V/.git"
+
           tar -C /tmp -czf "$HOME/rpmbuild/SOURCES/sckoc-$V.tar.gz" "sckoc-$V"
+
           rpmbuild -ba packaging/sckoc.spec
+
           cp "$HOME"/rpmbuild/RPMS/x86_64/*.rpm .
+
       - uses: actions/upload-artifact@v4
-        with: { name: rpm, path: "*.rpm" }
+        with:
+          name: rpm
+          path: "*.rpm"
+
+  release:
+    needs:
+      - build-deb
+      - build-rpm
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+
       - name: attach to release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
-        with: { files: "*.rpm" }
+        with:
+          overwrite_files: true
+          files: |
+            *.deb
+            *.rpm
 
   apt-repo:
     needs: build-deb
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
-        with: { name: deb, path: . }
+        with:
+          name: deb
+          path: .
+
       - name: build apt repo
         run: bash packaging/make-apt-repo.sh
+
       - name: publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
