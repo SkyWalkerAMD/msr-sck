@@ -7,7 +7,7 @@ cd apt-repo
 dpkg-scanpackages --arch amd64 pool /dev/null > dists/stable/main/binary-amd64/Packages
 gzip -9c dists/stable/main/binary-amd64/Packages > dists/stable/main/binary-amd64/Packages.gz
 apt-ftparchive \
-  -o APT::FTPArchive::Release::Origin=msr-sck \
+  -o APT::FTPArchive::Release::Origin=sckoc \
   -o APT::FTPArchive::Release::Suite=stable \
   -o APT::FTPArchive::Release::Codename=stable \
   -o APT::FTPArchive::Release::Architectures=amd64 \
@@ -17,5 +17,5 @@ mv /tmp/Release.tmp dists/stable/Release
 # ship the one-line repo setup script alongside the apt repo
 [ -f ../packaging/setup.sh ] && cp ../packaging/setup.sh setup.sh && chmod +x setup.sh
 [ -f ../setup.sh ] && cp ../setup.sh setup.sh && chmod +x setup.sh
-printf '<h1>msr-sck apt repository</h1><p>See <a href="https://github.com/SkyWalkerAMD/msr-sck">GitHub</a> for install instructions.</p>' > index.html
+printf '<h1>sckoc apt repository</h1><p>See <a href="https://github.com/SkyWalkerAMD/sckoc">GitHub</a> for install instructions.</p>' > index.html
 echo "apt repo ready under apt-repo/ (setup.sh included if present)"
