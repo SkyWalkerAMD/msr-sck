@@ -3,10 +3,10 @@
 set -e
 [ "$(id -u)" = 0 ] || { echo "run as root / sudo"; exit 1; }
 
-OLD=$( { /usr/local/bin/sckoc -V 2>/dev/null || /usr/local/bin/msr -V 2>/dev/null; } | grep "^msr" || true)
+OLD=$( { /usr/local/bin/sckoc -V 2>/dev/null || /usr/local/bin/msr -V 2>/dev/null; } | grep -E "^(msr|sckoc)" || true)
 [ -n "$OLD" ] && echo "== old version detected: $OLD, upgrading =="
-rm -f /usr/local/bin/sckoc /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr \
-      /usr/local/bin/sckoc /usr/local/bin/hsmp-fclk /usr/local/bin/hsmp-msg \
+rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr \
+      /usr/local/bin/hsmp-fclk /usr/local/bin/hsmp-msg \
       /etc/bash_completion.d/sckoc
 
 command -v gcc >/dev/null || {
@@ -21,9 +21,9 @@ command -v dmidecode >/dev/null || {
 
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cat > "$T/version.h" <<'VER_H'
-#ifndef MSR_TOOLS_VERSION_H
-#define MSR_TOOLS_VERSION_H
-#define VERSION_STRING "msr-tools-1.3"
+#ifndef SCKOC_VERSION_H
+#define SCKOC_VERSION_H
+#define VERSION_STRING "2.0.0"
 #endif
 VER_H
 cat > "$T/readoc.c" <<'READOC_C'
@@ -193,6 +193,7 @@ int main(int argc, char *argv[])
 	if (fd < 0) { perror("open /dev/hsmp"); return 1; }
 	msg.msg_id = strtoul(argv[1], NULL, 0);
 	msg.response_sz = strtoul(argv[2], NULL, 0);
+	if (msg.response_sz > 8) msg.response_sz = 8; /* args[] holds at most 8 words */
 	msg.sock_ind = strtoul(argv[3], NULL, 0);
 	msg.num_args = argc - 4;
 	for (i = 4; i < argc && i - 4 < 8; i++) msg.args[i - 4] = strtoul(argv[i], NULL, 0);
@@ -263,7 +264,7 @@ case "${1:-}" in
     if command -v dpkg >/dev/null && dpkg -s sckoc >/dev/null 2>&1; then
       { command -v apt-get >/dev/null && apt-get -y remove sckoc; } || dpkg -r sckoc
     fi
-    rm -f /usr/local/bin/sckoc /usr/local/bin/sckoc /usr/local/bin/hsmp-msg \
+    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg \
           /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
           /etc/bash_completion.d/sckoc \
           /etc/modules-load.d/msr.conf /etc/modules-load.d/sckoc.conf /etc/modules-load.d/sckoc-amd.conf /etc/modules-load.d/sckoc-sensors.conf /usr/lib/modules-load.d/sckoc.conf \
@@ -600,7 +601,7 @@ percore(){
       else rel=-1; tp=""; cd="ccd- "; fi
       # Tccd missing (e.g. k10temp lacks per-CCD on fam26): fall back to socket Tctl, mark with *
       if [ -n "$tp" ]; then td="$(printf '%3d' "$tp")°C"
-      elif [ -n "${TCTL[0]}" ]; then td="$(printf '%3d' "${TCTL[0]}")*C"
+      elif [ -n "${TCTL[$pk2]:-${TCTL[0]}}" ]; then td="$(printf '%3d' "${TCTL[$pk2]:-${TCTL[0]}}")*C"
       else td=" N/A "; fi
       extra="  $(printf '%6s' "$(wt "($dE) * ($base) * 100000000 / (2^$eu * ($dt))")") W  $cd $td  C0 $(printf '%3d' "$c0m")%"
     fi
@@ -618,10 +619,15 @@ mon(){
   if [ "$VEN" = GenuineIntel ]; then
     echo "  Core      Freq      Temp   Vcore        C0      C6"
   else
-    if [ "$VEN" = AuthenticAMD ] && [ -z "${CCDT[0:0]}" ]; then
-      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; k10temp lacks per-CCD)"
-    else
+    local hasccd=0 hf
+    for hf in "${HWROOT:-/sys/class/hwmon}"/hwmon*/temp[0-9]*_label; do
+      [ -e "$hf" ] || continue
+      case "$(cat "$hf" 2>/dev/null)" in Tccd*) hasccd=1; break ;; esac
+    done
+    if [ "$hasccd" = 1 ]; then
       echo "  Core      Freq       Power     CCD-Temp     C0"
+    else
+      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; k10temp lacks per-CCD)"
     fi
   fi
   percore
@@ -667,11 +673,11 @@ case "${1:-mon}" in
   *) echo "sckoc: unknown command '$1'"; echo "try: sckoc help"; exit 1 ;;
 esac
 MSR_SH
-chmod 755 /usr/local/bin/sckoc /usr/local/bin/hsmp-msg /usr/local/bin/sckoc
+chmod 755 /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg
 
 mkdir -p /etc/bash_completion.d
 cat > /etc/bash_completion.d/sckoc <<'COMP_SH'
-_msr_sck(){
+_sckoc(){
   local cur prev
   cur=${COMP_WORDS[COMP_CWORD]}
   prev=${COMP_WORDS[COMP_CWORD-1]}
@@ -689,7 +695,7 @@ _msr_sck(){
       return ;;
   esac
 }
-complete -F _msr_sck sckoc
+complete -F _sckoc sckoc
 COMP_SH
 
 modprobe msr

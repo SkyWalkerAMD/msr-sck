@@ -61,6 +61,8 @@ Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 unc
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/sckoc/main/install.sh | sudo bash
+# raw.githubusercontent.com 访问受限或被限流(HTTP 429)时，用 CDN 镜像：
+curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/install.sh | sudo bash
 ```
 
 自包含：自动装依赖（gcc、dmidecode）、编译组件、部署命令与 bash 补全、设置 msr 模块开机加载。AMD 平台额外自动配置 k10temp 与 HSMP（含 DKMS，见上节），并探测板载传感器驱动（nct6775 等）以启用电压 Rails 与真实 Vcore 显示。重复运行即升级，自动清理旧版本。
@@ -68,11 +70,15 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/sckoc/main/install.sh 
 **方式二：软件包**（从 [Releases](https://github.com/SkyWalkerAMD/sckoc/releases) 下载）
 
 ```bash
-# Rocky/RHEL/Fedora
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc-2.0.0-1.fc44.x86_64.rpm
-# Ubuntu/Debian
-sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc_2.0.0-1_amd64.deb
+# Fedora：下载与你的版本匹配的 fcNN 包（示例为 Fedora 44，文件名以 Releases 页实际为准）
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc-2.0.0-2.fc44.x86_64.rpm
+# Rocky / Alma / RHEL / CentOS Stream：下载对应 elN 包（示例为 EL8）；更推荐方式三的 COPR，自动匹配发行版
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc-2.0.0-2.el8.x86_64.rpm
+# Ubuntu / Debian
+sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.0.0/sckoc_2.0.0-2_amd64.deb
 ```
+
+注：RPM 二进制包与构建它的发行版绑定（glibc/依赖不同），fcNN 包装不进 RHEL 系，elN 包也装不进 Fedora，请按发行版取对应资产。
 
 **方式三：软件仓库**（添加一次，之后 `dnf/apt install sckoc` 并自动获得更新）
 
@@ -98,7 +104,7 @@ echo "deb [trusted=yes] https://skywalkeramd.github.io/sckoc/apt stable main" | 
 sudo apt update && sudo apt install sckoc
 ```
 
-注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建软件包用 `rpmbuild -ba packaging/sckoc.spec` 或 `bash packaging/build-deb.sh`。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
+注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-2.0.0.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
 
 ## 使用
 
@@ -135,6 +141,8 @@ sudo sckoc uninstall          # 交互确认，加 -y 跳过
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/sckoc/main/uninstall.sh | sudo bash
+# 镜像：
+curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/uninstall.sh | sudo bash
 ```
 
 ## 依赖与权限
@@ -150,4 +158,4 @@ curl -fsSL https://raw.githubusercontent.com/SkyWalkerAMD/sckoc/main/uninstall.s
 
 ## License
 
-本项目以 GPL-2.0 许可发布，全部代码均为原创，包括监控主程序 `sckoc`、MSR 读取程序 `readoc`、AMD HSMP 交互 `hsmp-msg.c` 以及打包与安装脚本。未经许可不得用于商业用途。
+本项目以 GPL-2.0 许可发布，全部代码均为原创，包括监控主程序 `sckoc`、MSR 读取程序 `readoc`、AMD HSMP 交互 `hsmp-msg.c` 以及打包与安装脚本。

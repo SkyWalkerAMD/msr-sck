@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
 	if (fd < 0) { perror("open /dev/hsmp"); return 1; }
 	msg.msg_id = strtoul(argv[1], NULL, 0);
 	msg.response_sz = strtoul(argv[2], NULL, 0);
+	if (msg.response_sz > 8) msg.response_sz = 8; /* args[] holds at most 8 words */
 	msg.sock_ind = strtoul(argv[3], NULL, 0);
 	msg.num_args = argc - 4;
 	for (i = 4; i < argc && i - 4 < 8; i++) msg.args[i - 4] = strtoul(argv[i], NULL, 0);

@@ -56,7 +56,7 @@ case "${1:-}" in
     if command -v dpkg >/dev/null && dpkg -s sckoc >/dev/null 2>&1; then
       { command -v apt-get >/dev/null && apt-get -y remove sckoc; } || dpkg -r sckoc
     fi
-    rm -f /usr/local/bin/sckoc /usr/local/bin/sckoc /usr/local/bin/hsmp-msg \
+    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg \
           /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
           /etc/bash_completion.d/sckoc \
           /etc/modules-load.d/msr.conf /etc/modules-load.d/sckoc.conf /etc/modules-load.d/sckoc-amd.conf /etc/modules-load.d/sckoc-sensors.conf /usr/lib/modules-load.d/sckoc.conf \
@@ -393,7 +393,7 @@ percore(){
       else rel=-1; tp=""; cd="ccd- "; fi
       # Tccd missing (e.g. k10temp lacks per-CCD on fam26): fall back to socket Tctl, mark with *
       if [ -n "$tp" ]; then td="$(printf '%3d' "$tp")°C"
-      elif [ -n "${TCTL[0]}" ]; then td="$(printf '%3d' "${TCTL[0]}")*C"
+      elif [ -n "${TCTL[$pk2]:-${TCTL[0]}}" ]; then td="$(printf '%3d' "${TCTL[$pk2]:-${TCTL[0]}}")*C"
       else td=" N/A "; fi
       extra="  $(printf '%6s' "$(wt "($dE) * ($base) * 100000000 / (2^$eu * ($dt))")") W  $cd $td  C0 $(printf '%3d' "$c0m")%"
     fi
@@ -411,10 +411,15 @@ mon(){
   if [ "$VEN" = GenuineIntel ]; then
     echo "  Core      Freq      Temp   Vcore        C0      C6"
   else
-    if [ "$VEN" = AuthenticAMD ] && [ -z "${CCDT[0:0]}" ]; then
-      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; k10temp lacks per-CCD)"
-    else
+    local hasccd=0 hf
+    for hf in "${HWROOT:-/sys/class/hwmon}"/hwmon*/temp[0-9]*_label; do
+      [ -e "$hf" ] || continue
+      case "$(cat "$hf" 2>/dev/null)" in Tccd*) hasccd=1; break ;; esac
+    done
+    if [ "$hasccd" = 1 ]; then
       echo "  Core      Freq       Power     CCD-Temp     C0"
+    else
+      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; k10temp lacks per-CCD)"
     fi
   fi
   percore

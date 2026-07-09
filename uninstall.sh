@@ -18,7 +18,7 @@ fi
 
 # 2) script installs + legacy names
 echo "== removing files =="
-rm -f /usr/local/bin/sckoc /usr/local/bin/rdmsr /usr/local/bin/hsmp-msg \
+rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/rdmsr /usr/local/bin/hsmp-msg \
       /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
       /etc/bash_completion.d/sckoc
 
@@ -55,7 +55,7 @@ fi
 
 # 6) verify
 LEFT=""
-for f in /usr/local/bin/sckoc /usr/bin/sckoc /usr/local/bin/rdmsr /usr/libexec/sckoc; do
+for f in /usr/local/bin/sckoc /usr/local/bin/readoc /usr/bin/sckoc /usr/local/bin/rdmsr /usr/libexec/sckoc; do
   [ -e "$f" ] && LEFT="$LEFT $f"
 done
 if [ -n "$LEFT" ]; then echo "== WARNING: leftovers:$LEFT =="; exit 1; fi
