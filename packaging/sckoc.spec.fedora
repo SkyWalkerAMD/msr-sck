@@ -3,7 +3,7 @@ Version:        2.0.0
 Release:        %autorelease
 Summary:        Read-only hardware monitor for Intel and AMD servers
 
-# readoc.c derives from intel/msr-tools (GPL-2.0-only); all other code is GPL-2.0-only
+# All code is original to this project (monitor script, readoc, hsmp-msg)
 License:        GPL-2.0-only
 URL:            https://github.com/SkyWalkerAMD/sckoc
 Source0:        %{url}/archive/refs/tags/%{version}/%{name}-%{version}.tar.gz
@@ -13,17 +13,18 @@ BuildRequires:  make
 
 # runtime helpers invoked by the sckoc script
 Requires:       dmidecode
+# the script probes optional modules (amd_hsmp, intel-uncore-frequency) at runtime
+Requires:       kmod
 
 # architecture: MSR/HSMP interfaces are x86_64-only
 ExclusiveArch:  x86_64
 
 %description
 sckoc is a read-only hardware monitor for Intel and AMD servers and
-workstations, derived from the sckoc utility in intel/msr-tools. It reports
-per-socket and per-core voltage, temperature, frequency (core, mesh, IOD and
-DRAM), power (RAPL, PL1/PL2, PPT), C-state residency and platform security
-state. Being read-only it works under Secure Boot and kernel lockdown
-(integrity).
+workstations. It reports per-socket and per-core voltage, temperature,
+frequency (core, mesh, IOD and DRAM), power (RAPL, PL1/PL2, PPT), C-state
+residency and platform security state. Being read-only it works under Secure
+Boot and kernel lockdown (integrity).
 
 The tool reads MSRs through /dev/cpu/*/msr and, on AMD, HSMP through /dev/hsmp.
 Loading the required kernel modules (msr, k10temp, amd_hsmp) and any BIOS setup
@@ -37,21 +38,30 @@ is left to the administrator and is intentionally not done by this package.
 %make_build CC=gcc
 
 %install
-install -D -m0755 readoc  %{buildroot}%{_bindir}/sckoc
-install -D -m0755 readoc    %{buildroot}%{_libexecdir}/%{name}/readoc
-install -D -m0755 hsmp-msg %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
-install -D -m0644 packaging/sckoc.completion \
+# /usr/bin/sckoc is the monitor SCRIPT; the compiled helpers live in libexec,
+# which is the first place the script looks for them
+install -D -p -m0755 sckoc    %{buildroot}%{_bindir}/sckoc
+install -D -p -m0755 readoc   %{buildroot}%{_libexecdir}/%{name}/readoc
+install -D -p -m0755 hsmp-msg %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
+install -D -p -m0644 packaging/sckoc.completion \
         %{buildroot}%{_datadir}/bash-completion/completions/sckoc
 
 %check
-# smoke test: the built helper must report its version without touching hardware
-test -x %{buildroot}%{_libexecdir}/%{name}/readoc
+# smoke tests, no hardware access:
+# the shipped /usr/bin/sckoc must be a parseable shell script (guards against
+# ever again packaging a compiled binary under the script's name)
+bash -n %{buildroot}%{_bindir}/sckoc
+head -c2 %{buildroot}%{_bindir}/sckoc | grep -q '#!'
+%{buildroot}%{_libexecdir}/%{name}/readoc -V
+test -x %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
 
 %files
 %license COPYING
 %doc README.md
 %{_bindir}/sckoc
 %{_libexecdir}/%{name}/
+%dir %{_datadir}/bash-completion
+%dir %{_datadir}/bash-completion/completions
 %{_datadir}/bash-completion/completions/sckoc
 
 %changelog

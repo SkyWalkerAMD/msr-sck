@@ -1,34 +1,48 @@
 Name:           sckoc
 Version:        2.0.0
-Release:        1%{?dist}
-Summary:        Read-only hardware monitor for Intel/AMD servers (sckoc-based)
+Release:        2%{?dist}
+Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
-URL:            https://github.com/GITHUB_USER/sckoc
-Source0:        %{name}-%{version}.tar.gz
+URL:            https://github.com/SkyWalkerAMD/sckoc
+Source0:        %{url}/archive/refs/tags/%{version}/%{name}-%{version}.tar.gz
 BuildRequires:  gcc
+BuildRequires:  make
 Requires:       dmidecode
 Requires:       kmod
+Requires(post): kmod
+ExclusiveArch:  x86_64
 
 %description
 sckoc is a read-only hardware monitor for Intel and AMD servers and
-workstations, derived from intel/msr-tools sckoc. It reports per-socket and
-per-core voltage, temperature, frequency (core/mesh/IOD/DRAM), power (RAPL,
-PL1/PL2, PPT), C-state residency and platform security state, and works under
-Secure Boot / kernel lockdown (integrity).
+workstations. It reports per-socket and per-core voltage, temperature,
+frequency (core/mesh/IOD/DRAM), power (RAPL, PL1/PL2, PPT), C-state residency
+and platform security state, and works under Secure Boot / kernel lockdown
+(integrity).
 
 %prep
-%setup -q
+%autosetup
 
 %build
-gcc %{optflags} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -I. readoc.c -o sckoc
-gcc %{optflags} hsmp-msg.c -o hsmp-msg
+%set_build_flags
+%make_build CC=gcc
 
 %install
-install -D -m755 sckoc  %{buildroot}%{_bindir}/sckoc
-install -D -m755 sckoc    %{buildroot}%{_libexecdir}/sckoc/sckoc
-install -D -m755 hsmp-msg %{buildroot}%{_libexecdir}/sckoc/hsmp-msg
-install -D -m644 packaging/sckoc.completion %{buildroot}%{_datadir}/bash-completion/completions/sckoc
-install -D -m644 packaging/sckoc.modules-load %{buildroot}%{_prefix}/lib/modules-load.d/sckoc.conf
+# /usr/bin/sckoc is the monitor SCRIPT; compiled helpers go to libexec,
+# which is the first place the script looks for them
+install -D -p -m0755 sckoc    %{buildroot}%{_bindir}/sckoc
+install -D -p -m0755 readoc   %{buildroot}%{_libexecdir}/%{name}/readoc
+install -D -p -m0755 hsmp-msg %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
+install -D -p -m0644 packaging/sckoc.completion %{buildroot}%{_datadir}/bash-completion/completions/sckoc
+install -D -p -m0644 packaging/sckoc.modules-load %{buildroot}%{_prefix}/lib/modules-load.d/sckoc.conf
+# ghost placeholder: the post scriptlet may create this on AMD hosts
+mkdir -p %{buildroot}%{_sysconfdir}/modules-load.d
+touch %{buildroot}%{_sysconfdir}/modules-load.d/sckoc-amd.conf
+
+%check
+bash -n %{buildroot}%{_bindir}/sckoc
+head -c2 %{buildroot}%{_bindir}/sckoc | grep -q '#!'
+%{buildroot}%{_libexecdir}/%{name}/readoc -V
+test -x %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
 
 %post
 modprobe msr 2>/dev/null || :
@@ -48,11 +62,29 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %license COPYING
 %doc README.md
 %{_bindir}/sckoc
-%{_libexecdir}/sckoc/
+%{_libexecdir}/%{name}/
+%dir %{_datadir}/bash-completion
+%dir %{_datadir}/bash-completion/completions
 %{_datadir}/bash-completion/completions/sckoc
 %{_prefix}/lib/modules-load.d/sckoc.conf
+%ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Thu Jul 09 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.0.0-2
+- fix: /usr/bin/sckoc was the compiled readoc ELF, not the monitor script
+  (the build step compiled readoc.c to a file literally named 'sckoc',
+  clobbering the script before install)
+- fix: ship the MSR helper as libexec/sckoc/readoc; it was installed as
+  libexec/sckoc/sckoc, a path the monitor script never looks at
+- build via make with distro flags (set_build_flags); hsmp-msg now hardened too
+- add packaging/sckoc.modules-load (referenced but missing from the 2.0.0 tag,
+  which broke rpmbuild and build-deb.sh on tag checkouts)
+- Source0 now points at the GitHub tag archive so COPR (rpkg) and local
+  builds use identical sources; use autosetup
+- own /etc/modules-load.d/sckoc-amd.conf as ghost; Requires(post): kmod
+- smoke tests in check guard the script/binary roles
+- real URL and maintainer address (were GITHUB_USER / example.com)
+
 * Tue Jul 07 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.0.0-1
 - rename project to sckoc (was msr-sck); MSR reader binary is now 'readoc'
 - 100%% original code

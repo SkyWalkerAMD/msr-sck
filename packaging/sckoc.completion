@@ -1,4 +1,4 @@
-_msr_sck(){
+_sckoc(){
   local cur prev
   cur=${COMP_WORDS[COMP_CWORD]}
   prev=${COMP_WORDS[COMP_CWORD-1]}
@@ -16,4 +16,4 @@ _msr_sck(){
       return ;;
   esac
 }
-complete -F _msr_sck sckoc
+complete -F _sckoc sckoc

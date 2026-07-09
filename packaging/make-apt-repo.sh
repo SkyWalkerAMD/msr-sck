@@ -17,5 +17,8 @@ mv /tmp/Release.tmp dists/stable/Release
 # ship the one-line repo setup script alongside the apt repo
 [ -f ../packaging/setup.sh ] && cp ../packaging/setup.sh setup.sh && chmod +x setup.sh
 [ -f ../setup.sh ] && cp ../setup.sh setup.sh && chmod +x setup.sh
+# also mirror the one-shot installer/uninstaller next to the repo (Pages fallback)
+[ -f ../install.sh ] && cp ../install.sh install.sh && chmod +x install.sh
+[ -f ../uninstall.sh ] && cp ../uninstall.sh uninstall.sh && chmod +x uninstall.sh
 printf '<h1>sckoc apt repository</h1><p>See <a href="https://github.com/SkyWalkerAMD/sckoc">GitHub</a> for install instructions.</p>' > index.html
 echo "apt repo ready under apt-repo/ (setup.sh included if present)"

@@ -1,13 +1,14 @@
 #!/bin/bash
 # build sckoc .deb — run from repo root: bash packaging/build-deb.sh
 set -e
-V=2.0.0; R=1; A=$(dpkg --print-architecture)
+V=2.0.0; R=2; A=$(dpkg --print-architecture)
 D=$(mktemp -d)
-gcc -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -I. readoc.c -o "$D/sckoc"
-gcc -Wall -O2 hsmp-msg.c -o "$D/hsmp-msg"
+# helpers are compiled under their real names; /usr/bin/sckoc is the SCRIPT
+gcc -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -I. readoc.c -o "$D/readoc"
+gcc -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 hsmp-msg.c -o "$D/hsmp-msg"
 P="$D/pkg"
-install -D -m755 sckoc        "$P/usr/bin/sckoc"
-install -D -m755 "$D/sckoc"     "$P/usr/libexec/sckoc/sckoc"
+install -D -m755 sckoc          "$P/usr/bin/sckoc"
+install -D -m755 "$D/readoc"    "$P/usr/libexec/sckoc/readoc"
 install -D -m755 "$D/hsmp-msg"  "$P/usr/libexec/sckoc/hsmp-msg"
 install -D -m644 packaging/sckoc.completion "$P/usr/share/bash-completion/completions/sckoc"
 install -D -m644 packaging/sckoc.modules-load "$P/usr/lib/modules-load.d/sckoc.conf"
@@ -18,17 +19,16 @@ cat > "$P/DEBIAN/control" <<CTL
 Package: sckoc
 Version: $V-$R
 Architecture: $A
-Maintainer: SkyWalkerAMD <you@example.com>
+Maintainer: SkyWalkerAMD <scka7t@gmail.com>
 Depends: kmod
 Recommends: dmidecode
 Section: utils
 Priority: optional
-Homepage: https://github.com/GITHUB_USER/sckoc
+Homepage: https://github.com/SkyWalkerAMD/sckoc
 Description: Read-only hardware monitor for Intel/AMD servers
  Reports per-socket and per-core voltage, temperature, frequency
  (core/mesh/IOD/DRAM), power (RAPL, PL1/PL2, PPT), C-state residency and
  platform security state. Works under Secure Boot / lockdown (integrity).
- Derived from intel/msr-tools sckoc.
 CTL
 cat > "$P/DEBIAN/postinst" <<'PI'
 #!/bin/sh
