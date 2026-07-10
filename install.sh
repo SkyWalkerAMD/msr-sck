@@ -211,7 +211,7 @@ cat > /usr/local/bin/sckoc <<'MSR_SH'
 MSRVER=2.0.0
 set -e
 LIBEXEC=/usr/libexec/sckoc
-READOC="${READOC:-$( [ -x "$LIBEXEC/readoc" ] && echo "$LIBEXEC/readoc" || command -v readoc || echo readoc )}"
+READOC="${READOC:-$( [ -x "$LIBEXEC/readoc" ] && echo "$LIBEXEC/readoc" || command -v readoc || echo /usr/local/bin/readoc )}"
 INT="${INT:-1}"
 rf(){ "$READOC" -p "$1" -u "$2" 2>/dev/null || echo 0; }
 bits(){ echo $(( ($1 >> $2) & ((1 << $3) - 1) )); }

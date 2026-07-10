@@ -131,6 +131,8 @@ sudo watch -n 3 sckoc         # 持续刷新
 
 环境变量：`INT=<秒>` 设采样窗口（默认 1），`DMI=<路径>` 覆盖 dmidecode 路径。
 
+注：RHEL/Rocky 系 `sudo` 的 `secure_path` 不含 `/usr/local/bin`，脚本方式（install.sh）安装后非 root 用户请用 `sudo /usr/local/bin/sckoc` 或切换 root shell；rpm/deb 安装在 `/usr/bin`，无此问题。
+
 ## 卸载
 
 ```bash
