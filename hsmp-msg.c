@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* hsmp-msg: generic HSMP query. usage: hsmp-msg <msg_id> <response_sz> <sock> [arg0..]
    prints response words space-separated */
 #include <stdio.h>

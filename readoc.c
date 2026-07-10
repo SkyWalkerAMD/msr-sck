@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * readoc.c - MSR reader for sckoc (socket/overclock monitor)
  *
