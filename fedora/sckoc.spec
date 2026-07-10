@@ -45,6 +45,7 @@ install -D -p -m0755 readoc   %{buildroot}%{_libexecdir}/%{name}/readoc
 install -D -p -m0755 hsmp-msg %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
 install -D -p -m0644 packaging/sckoc.completion \
         %{buildroot}%{_datadir}/bash-completion/completions/sckoc
+install -D -p -m0644 packaging/sckoc.1 %{buildroot}%{_mandir}/man1/sckoc.1
 
 %check
 # smoke tests, no hardware access:
@@ -63,6 +64,7 @@ test -x %{buildroot}%{_libexecdir}/%{name}/hsmp-msg
 %dir %{_datadir}/bash-completion
 %dir %{_datadir}/bash-completion/completions
 %{_datadir}/bash-completion/completions/sckoc
+%{_mandir}/man1/sckoc.1*
 
 %changelog
 %autochangelog
