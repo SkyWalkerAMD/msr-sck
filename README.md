@@ -55,6 +55,10 @@ Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 unc
 
 **HSMP 自动配置**：FCLK/MCLK、PPT、DDR 带宽、C0% 等依赖 `/dev/hsmp`。install.sh 在 AMD 平台自动完成：加载 k10temp，尝试内核自带 `amd_hsmp`，不可用时（如 TR PRO 9000WX）自动 DKMS 编译 [amd/amd_hsmp](https://github.com/amd/amd_hsmp)（产出 `hsmp_acpi` 模块），并持久化开机自动加载。**Secure Boot 开启时未签名 DKMS 模块无法加载**，安装器会检测并提示：禁用 Secure Boot，或注册 MOK 密钥后由 DKMS 自动签名（`mokutil --import` 后重启 enroll）。另需 BIOS 开启 HSMP Support（AMD CBS / NBIO 菜单，名称因板而异）。
 
+**消费级 Ryzen / 老内核（ryzen_smu 后备数据源）**：桌面 Ryzen（如 Ryzen 9000）没有 HSMP，FCLK/PPT 无法经 `/dev/hsmp` 获取；较老的内核（如 Ubuntu 22.04 的 5.15）的 k10temp 也不认识新 CPU family，温度同样读不到。此时可安装 out-of-tree 的 [ryzen_smu](https://github.com/kylon/ryzen_smu) 驱动（DKMS），sckoc 检测到 `/sys/kernel/ryzen_smu_drv/pm_table` 且表版本与已验证布局匹配时，自动以**只读**方式从 SMU PM table 补齐 socket/CCD 温度、FCLK/MCLK、PPT、SMU 固件版本与 SVI3 电压遥测（`sckoc vcore` 显示 VDDCR_CPU/SOC/VDDIO_MEM 等 rail），相应数值以 `(smu)` 标注；表版本不匹配则维持 `N/A`，绝不猜测。已验证平台：Granite Ridge（Ryzen 9000，表版本 0x620205）。注意：ryzen_smu 为第三方模块，非 sckoc 依赖，需自行安装；**5.18 之前的内核**编译该模块需追加 `-std=gnu11`（内核构建默认 gnu89 会报 `'for' loop initial declarations` 错误），可在其 dkms.conf 的 `CFLAGS_MODULE+=` 处补上。
+
+**DRAM 行的电压说明**：`DRAM ... @ x.x V` 中的电压来自 SMBIOS（dmidecode），为固件填写的 JEDEC 标称值（DDR5 恒为 1.1 V），**不反映 EXPO/XMP 实际设定**；实际内存接口电压见 `sckoc vcore` 的 `VDDIO_MEM`（需 ryzen_smu）。
+
 ## 安装
 
 **方式一：一键脚本**（任何发行版，克隆仓库或单独下载 install.sh 均可）

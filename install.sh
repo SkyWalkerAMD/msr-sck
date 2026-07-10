@@ -219,6 +219,27 @@ INT="${INT:-1}"
 rf(){ "$READOC" -p "$1" -u "$2" 2>/dev/null || echo 0; }
 bits(){ echo $(( ($1 >> $2) & ((1 << $3) - 1) )); }
 
+# --- ryzen_smu PM-table fallback (read-only) ---------------------------------
+# Consumer Ryzen has no HSMP, and pre-6.x kernels lack fam-1Ah k10temp; the
+# out-of-tree ryzen_smu driver exposes the SMU power-metrics table instead.
+# Offsets below are ONLY used when the table version matches the layout they
+# were verified against (Granite Ridge / 9950X3D, anchors: FCLK=BIOS 2000,
+# MCLK=DDR5-6000 1:1, per-core freq vs APERF/MPERF). Unknown version => N/A.
+SMUDRV="${SMUDRV:-/sys/kernel/ryzen_smu_drv}"
+SMU_PMT_VER=00620205  # fam26 Granite Ridge
+# verified offsets: 0x0C PPT W | 0x2C Tctl degC | 0x11C FCLK | 0x13C MCLK
+#                   0x534+4i per-core degC (16) | 0x570+4i per-core GHz
+# SVI3 rails:       0x48 VDDCR_CPU V | 0xD8/0xDC/0xE0 SOC V/A/W (VxA=W verified)
+#                   0xA8 VDDIO_MEM V | 0xE8 VDD_MISC V (1.1 nominal; not DIMM VDDQ)
+smu_ok(){
+  [ -r "$SMUDRV/pm_table" ] && [ -r "$SMUDRV/pm_table_version" ] || return 1
+  [ "$(od -An -tx4 -N4 "$SMUDRV/pm_table_version" 2>/dev/null | tr -d ' \n')" = "$SMU_PMT_VER" ]
+}
+smu_f(){ od -An -j "$1" -N4 -tf4 "$SMUDRV/pm_table" 2>/dev/null | awk '{printf "%.1f",$1}'; }
+smu_f3(){ od -An -j "$1" -N4 -tf4 "$SMUDRV/pm_table" 2>/dev/null | awk '{printf "%.3f",$1}'; }
+smu_fi(){ od -An -j "$1" -N4 -tf4 "$SMUDRV/pm_table" 2>/dev/null | awk '{printf "%d",$1}'; }
+# ------------------------------------------------------------------------------
+
 usage(){
   cat <<USAGE
 sckoc $MSRVER - read-only MSR/HSMP hardware monitor for Intel & AMD
@@ -248,7 +269,9 @@ NOTES:
   Root required. Reads only - never writes MSRs (Secure Boot / lockdown safe).
   Intel needs the msr module. AMD FCLK/PPT need /dev/hsmp (amd_hsmp or hsmp_acpi
   plus BIOS HSMP). AMD temperature needs k10temp. Voltage rails need a board
-  Super I/O driver (nct6775 etc).
+  Super I/O driver (nct6775 etc). On consumer Ryzen (no HSMP) or old kernels
+  (no fam-1Ah k10temp), the out-of-tree ryzen_smu driver is used as a read-only
+  fallback for temperature/FCLK/PPT/Vcore when present; values are marked (smu).
 USAGE
 }
 case "${1:-}" in
@@ -366,6 +389,9 @@ platform_info(){
     local sv
     if sv=$(hsmp_q 0x02 1 0); then
       smu="  SMU FW $(( (sv>>16)&255 )).$(( (sv>>8)&255 )).$(( sv&255 ))"
+    elif [ -r "$SMUDRV/version" ]; then
+      sv=$(sed 's/^SMU v//' "$SMUDRV/version" 2>/dev/null | tr -d '\n')
+      [ -n "$sv" ] && smu="  SMU FW $sv (smu)"
     fi
   fi
   echo "== Platform =="
@@ -482,6 +508,11 @@ amd_temp(){
     fi
     i=$((i+1))
   done
+  # no k10temp sensor for this socket: PM-table Tctl (socket 0 only; table is socket-local)
+  if [ "$1" = 0 ] && smu_ok; then
+    t=$(smu_fi 0x2C)
+    case "$t" in ''|*[!0-9]*) ;; *) [ "$t" -gt 0 ] && [ "$t" -lt 150 ] && { printf "%d°C (smu)" "$t"; return; } ;; esac
+  fi
   printf "N/A (need k10temp)"; }
 hsmp_q(){
   local h="${HSMP:-$( [ -x "$LIBEXEC/hsmp-msg" ] && echo "$LIBEXEC/hsmp-msg" || command -v hsmp-msg || echo /usr/local/bin/hsmp-msg )}"
@@ -489,8 +520,13 @@ hsmp_q(){
   [ -e /dev/hsmp ] && [ -x "$h" ] && "$h" "$@" 2>/dev/null
 }
 amd_fclk(){
-  local out
+  local out f m
   if out=$(hsmp_q 0x0F 2 "$1"); then printf "FCLK %s MHz / MCLK %s MHz" ${out}
+  elif [ "$1" = 0 ] && smu_ok; then
+    f=$(smu_fi 0x11C); m=$(smu_fi 0x13C)
+    printf "FCLK %s MHz / MCLK %s MHz (smu)" "$f" "$m"
+  elif [ "$FAM" -ge 25 ] && ! grep -Eqi 'epyc|threadripper' /proc/cpuinfo 2>/dev/null; then
+    printf "FCLK N/A (consumer Ryzen has no HSMP; ryzen_smu provides it, see README)"
   else printf "FCLK N/A (need amd_hsmp + BIOS HSMP)"; fi
 }
 amd_sock(){
@@ -504,13 +540,21 @@ amd_sock(){
   if pl=$(hsmp_q 0x06 1 "$1"); then
     plm=$(hsmp_q 0x07 1 "$1") || plm=""
     ppt="  PPT $(wt "$pl/1000") W${plm:+ (Max $(wt "$plm/1000") W)}"
+  elif [ "$1" = 0 ] && smu_ok; then
+    pl=$(smu_f 0x0C); [ -n "$pl" ] && ppt="  PPT $pl W (smu)"
   fi
-  # prefer real per-rail vcore from board sensor map; fall back to P-state nominal
+  # prefer real per-rail vcore from board sensor map; then SMU SVI3 telemetry; then P-state nominal
   local vctxt r0 r1
   r0=$(board_vcore VDDCR_CPU0) || r0=""
   r1=$(board_vcore VDDCR_CPU1) || r1=""
   if [ -n "$r0" ] || [ -n "$r1" ]; then
     vctxt="Vcore ${r0:+CPU0 $r0 V}${r0:+  }${r1:+CPU1 $r1 V}"
+  elif [ "$1" = 0 ] && smu_ok; then
+    local sv3; sv3=$(smu_f3 0x48)
+    case "$sv3" in
+      0.???|1.???) vctxt="Vcore $sv3 V (smu SVI3)" ;;
+      *) vctxt="Vcore N/A" ;;
+    esac
   else
     local vc; vc=$(amd_vid "$2")
     if [ -z "$vc" ]; then vctxt="Vcore N/A"
@@ -563,6 +607,29 @@ percore(){
       done
       s=$((s+1))
     done
+    # PM-table fallback: build CCD temps from per-core sensors (max per CCD group)
+    if [ ${#CCDT[@]} -eq 0 ] && smu_ok; then
+      local nc=0 nccd gi gt grel gsz
+      for c in $CPUS; do [ "$(siblings "$c" | head -1)" = "$c" ] && nc=$((nc+1)); done
+      nccd=$(printf '%s\n' "${CCD[@]}" | sort -un | grep -c -v '^-1$' || echo 0)
+      if [ "$nccd" -gt 0 ] && [ "$nc" -ge "$nccd" ]; then
+        gsz=$(( nc / nccd )); [ "$gsz" -lt 1 ] && gsz=1
+        gi=0
+        while [ "$gi" -lt "$nc" ]; do
+          gt=$(smu_fi $(( 0x534 + gi * 4 )))
+          case "$gt" in ''|*[!0-9]*) gi=$((gi+1)); continue ;; esac
+          if [ "$gt" -gt 0 ] && [ "$gt" -lt 150 ]; then
+            grel=$(( gi / gsz ))
+            if [ -z "${CCDT["0:$grel"]}" ] || [ "$gt" -gt "${CCDT["0:$grel"]}" ]; then CCDT["0:$grel"]=$gt; fi
+          fi
+          gi=$((gi+1))
+        done
+      fi
+      if [ -z "${TCTL[0]}" ]; then
+        gt=$(smu_fi 0x2C)
+        case "$gt" in ''|*[!0-9]*) ;; *) [ "$gt" -gt 0 ] && [ "$gt" -lt 150 ] && TCTL[0]=$gt ;; esac
+      fi
+    fi
   fi
   local -A T1 C61
   for c in $CPUS; do
@@ -627,10 +694,11 @@ mon(){
       [ -e "$hf" ] || continue
       case "$(cat "$hf" 2>/dev/null)" in Tccd*) hasccd=1; break ;; esac
     done
+    [ "$hasccd" = 0 ] && smu_ok && hasccd=1
     if [ "$hasccd" = 1 ]; then
       echo "  Core      Freq       Power     CCD-Temp     C0"
     else
-      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; k10temp lacks per-CCD)"
+      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; per-CCD needs newer k10temp, or ryzen_smu)"
     fi
   fi
   percore
@@ -656,6 +724,14 @@ case "${1:-mon}" in
         [ -n "$br0" ] && printf "  VDDCR_CPU0  %s V\n" "$br0"
         [ -n "$br1" ] && printf "  VDDCR_CPU1  %s V\n" "$br1"
         echo "  (per-core identical: AMD exposes no per-core voltage; rails are VRM-domain)"
+        exit 0
+      fi
+      if smu_ok; then
+        echo "== Rails (ryzen_smu PM table, SMU SVI3 telemetry) =="
+        printf "  VDDCR_CPU   %s V\n" "$(smu_f3 0x48)"
+        printf "  VDDCR_SOC   %s V  (%s A, %s W)\n" "$(smu_f3 0xD8)" "$(smu_f 0xDC)" "$(smu_f 0xE0)"
+        printf "  VDDIO_MEM   %s V   VDD_MISC %s V\n" "$(smu_f3 0xA8)" "$(smu_f3 0xE8)"
+        echo "  (per-core identical: single VDDCR rail on AM5; SMU-reported telemetry)"
         exit 0
       fi
       v=$(amd_vid 0)
