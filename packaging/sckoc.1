@@ -97,6 +97,13 @@ or
 module, plus HSMP enabled in BIOS). Per-rail voltage readings need a board
 Super I/O sensor driver such as
 .BR nct6775 .
+On consumer Ryzen parts (which have no HSMP) and on kernels whose
+.B k10temp
+predates the CPU family, the out-of-tree
+.B ryzen_smu
+driver is used, when present, as a read-only fallback source for
+temperature, FCLK/MCLK, PPT and rail voltages; such values are marked
+.IR (smu) .
 Loading these modules is left to the administrator; packaged installs
 autoload
 .B msr
