@@ -27,6 +27,7 @@ cat > "$T/version.h" <<'VER_H'
 #endif
 VER_H
 cat > "$T/readoc.c" <<'READOC_C'
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * readoc.c - MSR reader for sckoc (socket/overclock monitor)
  *
@@ -156,6 +157,7 @@ int main(int argc, char *argv[])
 READOC_C
 gcc -I"$T" -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 "$T/readoc.c" -o /usr/local/bin/readoc
 cat > "$T/hsmp-msg.c" <<'HSMP_C'
+// SPDX-License-Identifier: GPL-2.0-only
 /* hsmp-msg: generic HSMP query. usage: hsmp-msg <msg_id> <response_sz> <sock> [arg0..]
    prints response words space-separated */
 #include <stdio.h>
@@ -207,6 +209,7 @@ gcc -Wall -O2 "$T/hsmp-msg.c" -o /usr/local/bin/hsmp-msg
 
 cat > /usr/local/bin/sckoc <<'MSR_SH'
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # sckoc: Intel/AMD read-only hardware monitor (no writes)
 MSRVER=2.0.0
 set -e
