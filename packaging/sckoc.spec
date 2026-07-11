@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 Name:           sckoc
-Version:        2.1.0
+Version:        2.1.1
 Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
@@ -75,6 +75,10 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Sat Jul 11 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.1.1-1
+- add SPDX license identifiers to all remaining source and packaging files
+- reword Fedora spec description to avoid rpmlint spell-checker false positives
+
 * Sat Jul 11 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.1.0-1
 - add tpmi-uncore helper: read-only TPMI MMIO fallback for mesh/IOD frequency
   on TPMI-era Xeon (Granite Rapids+) with pre-6.5 kernels (values marked (tpmi))
