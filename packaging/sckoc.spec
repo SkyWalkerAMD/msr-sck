@@ -1,6 +1,6 @@
 Name:           sckoc
-Version:        2.0.0
-Release:        3%{?dist}
+Version:        2.1.0
+Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
 URL:            https://github.com/SkyWalkerAMD/sckoc
@@ -74,6 +74,17 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Sat Jul 11 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.1.0-1
+- add tpmi-uncore helper: read-only TPMI MMIO fallback for mesh/IOD frequency
+  on TPMI-era Xeon (Granite Rapids+) with pre-6.5 kernels (values marked (tpmi))
+- add ryzen_smu PM-table fallback on consumer Ryzen / old kernels: socket and
+  per-CCD temperature, FCLK/MCLK, PPT, SVI3 rail voltages (values marked (smu))
+- vendor-aware SMT label: Intel platforms now show HT, AMD platforms show SMT
+- bash completion: vendor-filtered MSR register list, case-insensitive hex
+  matching, bitfield (hi:lo) completion for dump
+- uninstall hardening: full leftover verification, COPR repo file fallback
+  cleanup, third-party ryzen_smu guidance
+
 * Fri Jul 10 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.0.0-3
 - add sckoc(1) man page
 - add SPDX license identifiers to all source files

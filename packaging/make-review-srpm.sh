@@ -2,7 +2,7 @@
 # make-review-srpm.sh — regenerate the Fedora-review SRPM (+ matching
 # sckoc.spec copy) for a released tag, inside a Fedora container.
 #
-# Usage:   bash make-review-srpm.sh [tag]      # tag defaults to 2.0.0
+# Usage:   bash make-review-srpm.sh [tag]      # tag defaults to 2.1.0
 # Needs:   curl, podman
 # Output:  ~/review-srpm/sckoc.spec  and  ~/review-srpm/sckoc-<V>-1.fc<NN>.src.rpm
 #          (filenames match the Spec/SRPM URLs posted on the review ticket)
@@ -16,7 +16,7 @@
 # (the in-container install is skipped automatically when tools exist)
 set -euo pipefail
 
-TAG="${1:-2.0.0}"
+TAG="${1:-2.1.0}"
 SRPM_IMAGE="${SRPM_IMAGE:-registry.fedoraproject.org/fedora:44}"
 WORK=~/review-srpm
 TARBALL="sckoc-$TAG.tar.gz"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # build sckoc .deb — run from repo root: bash packaging/build-deb.sh
 set -e
-V=2.0.0; R=3; A=$(dpkg --print-architecture 2>/dev/null || echo amd64)
+V=2.1.0; R=1; A=$(dpkg --print-architecture 2>/dev/null || echo amd64)
 D=$(mktemp -d)
 # helpers are compiled under their real names; /usr/bin/sckoc is the SCRIPT
 gcc -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -I. readoc.c -o "$D/readoc"
