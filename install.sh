@@ -6,7 +6,7 @@ set -e
 OLD=$( { /usr/local/bin/sckoc -V 2>/dev/null || /usr/local/bin/msr -V 2>/dev/null; } | grep -E "^(msr|sckoc)" || true)
 [ -n "$OLD" ] && echo "== old version detected: $OLD, upgrading =="
 rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr \
-      /usr/local/bin/hsmp-fclk /usr/local/bin/hsmp-msg \
+      /usr/local/bin/hsmp-fclk /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
       /etc/bash_completion.d/sckoc
 
 command -v gcc >/dev/null || {
@@ -207,6 +207,165 @@ int main(int argc, char *argv[])
 HSMP_C
 gcc -Wall -O2 "$T/hsmp-msg.c" -o /usr/local/bin/hsmp-msg
 
+cat > "$T/tpmi-uncore.c" <<'TPMI_C'
+/* tpmi-uncore.c - read-only Intel TPMI uncore frequency reader for sckoc
+ *
+ * Finds OOBMSM PCI devices carrying the TPMI VSEC (ID 0x42), parses the
+ * PFS directory in the BAR, locates the Uncore Frequency feature (TPMI ID 2)
+ * and prints, one line per fabric cluster:
+ *
+ *     <dev-index> <cur-MHz> <min-MHz> <max-MHz>
+ *
+ * Field layout verified against intel-uncore-frequency-tpmi.c and anchored
+ * on live data (Xeon 658X: mesh 2900/2900/2900, IOD 2500/800/2500 x2).
+ *
+ * Strictly read-only: O_RDONLY, PROT_READ. Never writes to hardware.
+ * Env: TPMI_PCI_ROOT overrides /sys/bus/pci/devices (for testing).
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+#define VSEC_CAP_ID     0x000b
+#define VSEC_ID_TPMI    0x0042
+#define TPMI_ID_UNCORE  0x02
+
+static uint32_t cfg_dw(const uint8_t *cfg, size_t len, size_t off)
+{
+    if (off + 4 > len) return 0;
+    return (uint32_t)cfg[off] | (uint32_t)cfg[off+1] << 8 |
+           (uint32_t)cfg[off+2] << 16 | (uint32_t)cfg[off+3] << 24;
+}
+
+/* decode one uncore feature region; returns clusters printed */
+static int decode_uncore(volatile uint8_t *bar, size_t barsz, uint64_t off,
+                         int nent, int esz_dw, int devidx)
+{
+    int printed = 0;
+    size_t stride = (size_t)esz_dw * 4;
+
+    for (int i = 0; i < nent; i++) {
+        volatile uint8_t *inst = bar + off + (size_t)i * stride;
+        if (off + (size_t)(i + 1) * stride > barsz) break;
+
+        uint64_t hdr = *(volatile uint64_t *)inst;
+        if ((uint32_t)hdr == 0xffffffffu) continue;      /* absent die */
+
+        int nclus = (int)((hdr >> 8) & 0xff);
+        if (nclus <= 0 || nclus > 8) continue;
+
+        uint64_t offs = *(volatile uint64_t *)(inst + 8); /* cluster offset bytes */
+        for (int c = 0; c < nclus; c++) {
+            unsigned cb = ((offs >> (8 * c)) & 0xff) * 8; /* 8-byte units */
+            if (cb + 16 > stride) continue;
+            volatile uint8_t *cl = inst + cb;
+
+            uint64_t status  = *(volatile uint64_t *)(cl + 0);
+            uint64_t control = *(volatile uint64_t *)(cl + 8);
+
+            unsigned cur = (unsigned)(status & 0x7f) * 100;
+            unsigned max = (unsigned)((control >> 8)  & 0x7f) * 100;
+            unsigned min = (unsigned)((control >> 15) & 0x7f) * 100;
+            if (!cur) continue;                            /* sanity */
+            printf("%d %u %u %u\n", devidx, cur, min, max);
+            printed++;
+        }
+    }
+    return printed;
+}
+
+static int probe_device(const char *root, const char *bdf, int devidx)
+{
+    char path[512];
+    uint8_t cfg[4096];
+
+    snprintf(path, sizeof path, "%s/%s/config", root, bdf);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+    ssize_t clen = read(fd, cfg, sizeof cfg);
+    close(fd);
+    if (clen < 0x104) return 0;                    /* no extended caps */
+    if (cfg_dw(cfg, clen, 0) == 0xffffffffu) return 0;
+    if ((cfg_dw(cfg, clen, 0) & 0xffff) != 0x8086) return 0;  /* Intel only */
+
+    /* walk PCIe extended capabilities for VSEC id 0x42 (TPMI) */
+    size_t cap = 0x100;
+    int bir = -1; uint64_t tbl_off = 0; int guard = 64;
+    while (cap && guard--) {
+        uint32_t h = cfg_dw(cfg, clen, cap);
+        if ((h & 0xffff) == VSEC_CAP_ID) {
+            uint32_t h1 = cfg_dw(cfg, clen, cap + 4);
+            if ((h1 & 0xffff) == VSEC_ID_TPMI) {
+                uint32_t tbl = cfg_dw(cfg, clen, cap + 0xc);
+                bir = tbl & 7;
+                tbl_off = tbl & ~7u;
+                break;
+            }
+        }
+        cap = (h >> 20) & 0xffc;
+    }
+    if (bir < 0) return 0;
+
+    snprintf(path, sizeof path, "%s/%s/resource%d", root, bdf, bir);
+    fd = open(path, O_RDONLY);
+    if (fd < 0) { perror("open BAR (root required)"); return 0; }
+    struct stat st;
+    if (fstat(fd, &st) < 0 || st.st_size <= 0) { close(fd); return 0; }
+    size_t barsz = (size_t)st.st_size;
+
+    volatile uint8_t *bar = mmap(NULL, barsz, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (bar == MAP_FAILED) { perror("mmap BAR (lockdown enabled?)"); return 0; }
+
+    /* PFS directory: 8-byte entries at tbl_off. Count comes from the VSEC
+     * num_entries byte, but scanning until an all-ones/zero-size entry is
+     * equally safe and avoids re-reading config. Cap at 64.               */
+    int printed = 0;
+    for (int e = 0; e < 64; e++) {
+        uint64_t q = *(volatile uint64_t *)(bar + tbl_off + (size_t)e * 8);
+        if ((uint32_t)q == 0xffffffffu) break;
+        unsigned id   = q & 0xff;
+        unsigned nent = (q >> 8) & 0xff;
+        unsigned esz  = (q >> 16) & 0xffff;          /* dwords */
+        uint64_t coff = ((q >> 32) & 0xffff) * 1024; /* KB units */
+        if (!nent || !esz) break;
+        if (id == TPMI_ID_UNCORE) {
+            printed = decode_uncore(bar, barsz, coff, nent, esz, devidx);
+            break;
+        }
+    }
+    munmap((void *)bar, barsz);
+    return printed;
+}
+
+int main(void)
+{
+    const char *root = getenv("TPMI_PCI_ROOT");
+    if (!root) root = "/sys/bus/pci/devices";
+
+    struct dirent **list;
+    int n = scandir(root, &list, NULL, alphasort);
+    if (n < 0) { perror("scandir"); return 1; }
+
+    int devidx = 0, total = 0;
+    for (int i = 0; i < n; i++) {
+        if (list[i]->d_name[0] == '.') { free(list[i]); continue; }
+        int p = probe_device(root, list[i]->d_name, devidx);
+        if (p > 0) { devidx++; total += p; }
+        free(list[i]);
+    }
+    free(list);
+    return total > 0 ? 0 : 1;
+}
+TPMI_C
+gcc -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 "$T/tpmi-uncore.c" -o /usr/local/bin/tpmi-uncore
+
 cat > /usr/local/bin/sckoc <<'MSR_SH'
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
@@ -272,6 +431,8 @@ NOTES:
   Super I/O driver (nct6775 etc). On consumer Ryzen (no HSMP) or old kernels
   (no fam-1Ah k10temp), the out-of-tree ryzen_smu driver is used as a read-only
   fallback for temperature/FCLK/PPT/Vcore when present; values are marked (smu).
+  On TPMI-era Xeon (Granite Rapids+) with pre-6.5 kernels, mesh/IOD frequency
+  is read directly from TPMI MMIO by the tpmi-uncore helper; marked (tpmi).
 USAGE
 }
 case "${1:-}" in
@@ -290,7 +451,7 @@ case "${1:-}" in
     if command -v dpkg >/dev/null && dpkg -s sckoc >/dev/null 2>&1; then
       { command -v apt-get >/dev/null && apt-get -y remove sckoc; } || dpkg -r sckoc
     fi
-    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg \
+    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
           /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
           /etc/bash_completion.d/sckoc \
           /etc/modules-load.d/msr.conf /etc/modules-load.d/sckoc.conf /etc/modules-load.d/sckoc-amd.conf /etc/modules-load.d/sckoc-sensors.conf /usr/lib/modules-load.d/sckoc.conf \
@@ -413,7 +574,7 @@ wt4(){ awk "BEGIN{printf \"%.4f\", $1}"; }
 
 UNC="${UNCSYS:-/sys/devices/system/cpu/intel_uncore_frequency}"
 intel_uncore(){
-  local d pk mesh="" iod="" lo="" hi=""
+  local d pk mesh="" iod="" lo="" hi="" tag=""
   [ -d "$UNC" ] || modprobe intel-uncore-frequency-tpmi 2>/dev/null || modprobe intel-uncore-frequency 2>/dev/null || true
   for d in "$UNC"/uncore* "$UNC"/package_0"$1"_die_*; do
     [ -e "$d/current_freq_khz" ] || continue
@@ -424,6 +585,30 @@ intel_uncore(){
       hi=$(( $(cat "$d/max_freq_khz" 2>/dev/null || echo 0) / 1000 ))
     else iod="$iod $(( $(cat "$d/current_freq_khz") / 1000 ))"; fi
   done
+  if [ -z "$mesh" ]; then
+    # pre-TPMI Xeon: uncore ratio MSRs (0x621 current, 0x620 min/max)
+    local v621 cur
+    if v621=$("$READOC" -p "$2" -u 0x621 2>/dev/null) && cur=$(( (v621 & 127) * 100 )) && [ "$cur" -gt 0 ]; then
+      mesh=$cur
+      lo=$(( $(bits "$(rf "$2" 0x620)" 8 7) * 100 ))
+      hi=$(( $(bits "$(rf "$2" 0x620)" 0 7) * 100 ))
+    fi
+  fi
+  if [ -z "$mesh" ]; then
+    # TPMI-era Xeon (GNR+) on pre-6.5 kernels: read the uncore TPMI MMIO
+    # region directly via the read-only tpmi-uncore helper. OOBMSM device
+    # order is assumed to match package order.
+    local tp tl tc tn tx
+    tp="${TPMIU:-$( [ -x "$LIBEXEC/tpmi-uncore" ] && echo "$LIBEXEC/tpmi-uncore" || command -v tpmi-uncore || echo /usr/local/bin/tpmi-uncore )}"
+    if [ -x "$tp" ]; then
+      tl=$("$tp" 2>/dev/null | awk -v s="$1" '$1==s{print $2,$3,$4}')
+      while read -r tc tn tx; do
+        [ -n "$tc" ] || continue
+        if [ -z "$mesh" ]; then mesh=$tc; lo=$tn; hi=$tx; else iod="$iod $tc"; fi
+      done <<< "$tl"
+      [ -n "$mesh" ] && tag=" (tpmi)"
+    fi
+  fi
   if [ -n "$mesh" ]; then
     local it="" m0="Mesh"; set -- $iod
     case $# in
@@ -432,13 +617,9 @@ intel_uncore(){
       3) m0="Mesh0"; it="  Mesh1 $1 MHz  IOD-S $2 MHz  IOD-N $3 MHz" ;;
       *) it="  IOD $(echo $iod | tr " " "/") MHz" ;;
     esac
-    printf "%s %s MHz (Min %s, Max %s)%s" "$m0" "$mesh" "$lo" "$hi" "$it"
+    printf "%s %s MHz (Min %s, Max %s)%s%s" "$m0" "$mesh" "$lo" "$hi" "$it" "$tag"
   else
-    local v621 cur
-    if v621=$("$READOC" -p "$2" -u 0x621 2>/dev/null) && cur=$(( (v621 & 127) * 100 )) && [ "$cur" -gt 0 ]; then
-      printf "Mesh %d MHz (Min %d, Max %d)" "$cur" \
-        $(( $(bits "$(rf "$2" 0x620)" 8 7) * 100 )) $(( $(bits "$(rf "$2" 0x620)" 0 7) * 100 ))
-    else printf "Mesh N/A (need intel-uncore-frequency driver)"; fi
+    printf "Mesh N/A (need intel-uncore-frequency driver, or tpmi-uncore helper on pre-6.5 kernels)"
   fi
 }
 intel_sock(){
@@ -752,7 +933,7 @@ case "${1:-mon}" in
   *) echo "sckoc: unknown command '$1'"; echo "try: sckoc help"; exit 1 ;;
 esac
 MSR_SH
-chmod 755 /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg
+chmod 755 /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore
 
 mkdir -p /etc/bash_completion.d
 cat > /etc/bash_completion.d/sckoc <<'COMP_SH'

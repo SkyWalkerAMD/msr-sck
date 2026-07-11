@@ -62,6 +62,8 @@ NOTES:
   Super I/O driver (nct6775 etc). On consumer Ryzen (no HSMP) or old kernels
   (no fam-1Ah k10temp), the out-of-tree ryzen_smu driver is used as a read-only
   fallback for temperature/FCLK/PPT/Vcore when present; values are marked (smu).
+  On TPMI-era Xeon (Granite Rapids+) with pre-6.5 kernels, mesh/IOD frequency
+  is read directly from TPMI MMIO by the tpmi-uncore helper; marked (tpmi).
 USAGE
 }
 case "${1:-}" in
@@ -80,7 +82,7 @@ case "${1:-}" in
     if command -v dpkg >/dev/null && dpkg -s sckoc >/dev/null 2>&1; then
       { command -v apt-get >/dev/null && apt-get -y remove sckoc; } || dpkg -r sckoc
     fi
-    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg \
+    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
           /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
           /etc/bash_completion.d/sckoc \
           /etc/modules-load.d/msr.conf /etc/modules-load.d/sckoc.conf /etc/modules-load.d/sckoc-amd.conf /etc/modules-load.d/sckoc-sensors.conf /usr/lib/modules-load.d/sckoc.conf \
@@ -203,7 +205,7 @@ wt4(){ awk "BEGIN{printf \"%.4f\", $1}"; }
 
 UNC="${UNCSYS:-/sys/devices/system/cpu/intel_uncore_frequency}"
 intel_uncore(){
-  local d pk mesh="" iod="" lo="" hi=""
+  local d pk mesh="" iod="" lo="" hi="" tag=""
   [ -d "$UNC" ] || modprobe intel-uncore-frequency-tpmi 2>/dev/null || modprobe intel-uncore-frequency 2>/dev/null || true
   for d in "$UNC"/uncore* "$UNC"/package_0"$1"_die_*; do
     [ -e "$d/current_freq_khz" ] || continue
@@ -214,6 +216,30 @@ intel_uncore(){
       hi=$(( $(cat "$d/max_freq_khz" 2>/dev/null || echo 0) / 1000 ))
     else iod="$iod $(( $(cat "$d/current_freq_khz") / 1000 ))"; fi
   done
+  if [ -z "$mesh" ]; then
+    # pre-TPMI Xeon: uncore ratio MSRs (0x621 current, 0x620 min/max)
+    local v621 cur
+    if v621=$("$READOC" -p "$2" -u 0x621 2>/dev/null) && cur=$(( (v621 & 127) * 100 )) && [ "$cur" -gt 0 ]; then
+      mesh=$cur
+      lo=$(( $(bits "$(rf "$2" 0x620)" 8 7) * 100 ))
+      hi=$(( $(bits "$(rf "$2" 0x620)" 0 7) * 100 ))
+    fi
+  fi
+  if [ -z "$mesh" ]; then
+    # TPMI-era Xeon (GNR+) on pre-6.5 kernels: read the uncore TPMI MMIO
+    # region directly via the read-only tpmi-uncore helper. OOBMSM device
+    # order is assumed to match package order.
+    local tp tl tc tn tx
+    tp="${TPMIU:-$( [ -x "$LIBEXEC/tpmi-uncore" ] && echo "$LIBEXEC/tpmi-uncore" || command -v tpmi-uncore || echo /usr/local/bin/tpmi-uncore )}"
+    if [ -x "$tp" ]; then
+      tl=$("$tp" 2>/dev/null | awk -v s="$1" '$1==s{print $2,$3,$4}')
+      while read -r tc tn tx; do
+        [ -n "$tc" ] || continue
+        if [ -z "$mesh" ]; then mesh=$tc; lo=$tn; hi=$tx; else iod="$iod $tc"; fi
+      done <<< "$tl"
+      [ -n "$mesh" ] && tag=" (tpmi)"
+    fi
+  fi
   if [ -n "$mesh" ]; then
     local it="" m0="Mesh"; set -- $iod
     case $# in
@@ -222,13 +248,9 @@ intel_uncore(){
       3) m0="Mesh0"; it="  Mesh1 $1 MHz  IOD-S $2 MHz  IOD-N $3 MHz" ;;
       *) it="  IOD $(echo $iod | tr " " "/") MHz" ;;
     esac
-    printf "%s %s MHz (Min %s, Max %s)%s" "$m0" "$mesh" "$lo" "$hi" "$it"
+    printf "%s %s MHz (Min %s, Max %s)%s%s" "$m0" "$mesh" "$lo" "$hi" "$it" "$tag"
   else
-    local v621 cur
-    if v621=$("$READOC" -p "$2" -u 0x621 2>/dev/null) && cur=$(( (v621 & 127) * 100 )) && [ "$cur" -gt 0 ]; then
-      printf "Mesh %d MHz (Min %d, Max %d)" "$cur" \
-        $(( $(bits "$(rf "$2" 0x620)" 8 7) * 100 )) $(( $(bits "$(rf "$2" 0x620)" 0 7) * 100 ))
-    else printf "Mesh N/A (need intel-uncore-frequency driver)"; fi
+    printf "Mesh N/A (need intel-uncore-frequency driver, or tpmi-uncore helper on pre-6.5 kernels)"
   fi
 }
 intel_sock(){

@@ -39,7 +39,7 @@
 
 **每核温度**：Intel 每个核心有独立数字温度传感器（DTS），逐核温度通过 per-core MSR `0x19C`（IA32_THERM_STATUS）读取，以 TjMax 为基准换算，精确到单核。
 
-**Uncore / Mesh 频率**：Mesh 与 IOD-S/IOD-N 多域 uncore 频率通过 TPMI sysfs 接口读取（含 Min/Max），需要 `intel-uncore-frequency` 或 `intel-uncore-frequency-tpmi` 驱动（内核 5.6+ / 6.5+，RHEL 9 系已回移）。
+**Uncore / Mesh 频率**：Mesh 与 IOD-S/IOD-N 多域 uncore 频率通过 TPMI sysfs 接口读取（含 Min/Max），需要 `intel-uncore-frequency` 或 `intel-uncore-frequency-tpmi` 驱动（内核 5.6+ / 6.5+，RHEL 9 系已回移）。传统 Xeon 在无驱动时回退读取 uncore MSR（`0x620/0x621`）。**TPMI 世代 Xeon（Granite Rapids 及以后）配老内核**（如 CentOS 7.9 的 3.10、el8）：uncore MSR 已废弃（读为 0），内核又没有 TPMI 驱动，此时 sckoc 使用自带的 `tpmi-uncore` 辅助器**只读** mmap OOBMSM 设备的 TPMI MMIO 区域直接解码（字段布局按内核 `intel-uncore-frequency-tpmi` 驱动实现，实测于 Xeon 658X：compute mesh 与 IOD-S/N 三域及 Min/Max 与驱动读数逐一一致），数值以 `(tpmi)` 标注。注意：该路径需要 root 且 lockdown 为 none（Secure Boot 开启会启用 lockdown 并阻止用户态 mmap PCI BAR；有驱动的新内核走 sysfs 不受此限制）。
 
 **功率墙**：PL1/PL2 功率限制及其使能/锁定状态来自 RAPL MSR，包级与 DRAM 功耗同样经 RAPL 读取。OC Lock 状态取自 `0x194`（MSR_FLEX_RATIO）。
 
