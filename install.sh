@@ -466,9 +466,15 @@ case "${1:-}" in
       echo "      remove manually: dkms remove -m amd_hsmp -v <ver> --all; rm -rf /usr/src/amd_hsmp-<ver>"
     fi
     rm -rf /var/lib/sckoc
+    if command -v dkms >/dev/null 2>&1 && dkms status 2>/dev/null | grep -q '^ryzen[-_]smu'; then
+      echo "note: DKMS ryzen_smu is third-party (optional sckoc data source) - kept."
+      echo "      remove manually: dkms remove -m ryzen_smu -v <ver> --all; rm -rf /usr/src/ryzen_smu-<ver>;"
+      echo "      rm -f /etc/modules-load.d/ryzen_smu.conf"
+    fi
     if command -v dnf >/dev/null && dnf copr list 2>/dev/null | grep -q sckoc; then
       dnf -y copr remove skywalkeramd/sckoc 2>/dev/null || dnf -y copr disable skywalkeramd/sckoc 2>/dev/null || true
     fi
+    rm -f /etc/yum.repos.d/_copr*skywalkeramd*sckoc*.repo
     echo "sckoc fully removed. (shared deps gcc/dmidecode/dkms/git kept; loaded kernel modules stay until reboot)"
     exit 0 ;;
 esac
