@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # install.sh: one-click install/upgrade for sckoc (Intel/AMD read-only monitor)
 set -e
 [ "$(id -u)" = 0 ] || { echo "run as root / sudo"; exit 1; }
@@ -21,6 +22,7 @@ command -v dmidecode >/dev/null || {
 
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cat > "$T/version.h" <<'VER_H'
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef SCKOC_VERSION_H
 #define SCKOC_VERSION_H
 #define VERSION_STRING "2.1.0"
@@ -208,6 +210,7 @@ HSMP_C
 gcc -Wall -O2 "$T/hsmp-msg.c" -o /usr/local/bin/hsmp-msg
 
 cat > "$T/tpmi-uncore.c" <<'TPMI_C'
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* tpmi-uncore.c - read-only Intel TPMI uncore frequency reader for sckoc
  *
  * Finds OOBMSM PCI devices carrying the TPMI VSEC (ID 0x42), parses the

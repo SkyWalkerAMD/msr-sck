@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 CFLAGS ?= -Wall -O2
 CPPFLAGS += -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -I.
 

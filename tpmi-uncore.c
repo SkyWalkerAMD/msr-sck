@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* tpmi-uncore.c - read-only Intel TPMI uncore frequency reader for sckoc
  *
  * Finds OOBMSM PCI devices carrying the TPMI VSEC (ID 0x42), parses the
