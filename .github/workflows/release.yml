@@ -39,9 +39,9 @@ jobs:
             label: el8
           - image: rockylinux:9
             label: el9
-          # el10 需要时取消注释（官方 library 尚无 rockylinux:10 标签）
-          # - image: rockylinux/rockylinux:10
-          #   label: el10
+          # 官方 library 尚无 rockylinux:10,用 RESF 维护的命名空间镜像
+          - image: rockylinux/rockylinux:10
+            label: el10
           - image: fedora:latest
             label: fedora
     steps:
@@ -66,10 +66,40 @@ jobs:
           name: rpm-${{ matrix.label }}
           path: "*.rpm"
 
+  review-srpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 复刻 packaging/make-review-srpm.sh 的容器配方:fedora + rpmautospec,
+      # 对 fedora/sckoc.spec 做 rpmbuild -bs;%autorelease 在无 git 元数据时
+      # 自动落到 Release 1(与 2.0.0 审核 SRPM 的生成方式一致)。
+      - name: build review SRPM (fedora spec)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src fedora:latest bash -ec '
+            dnf -y install rpm-build rpmdevtools rpmautospec tar gzip
+            V=$(sed -n "s/^Version:[[:space:]]*//p" fedora/sckoc.spec)
+            mkdir -p /root/rpmbuild/SOURCES "/tmp/sckoc-$V"
+            cp -r . "/tmp/sckoc-$V/"
+            rm -rf "/tmp/sckoc-$V/.git"
+            tar -C /tmp -czf "/root/rpmbuild/SOURCES/sckoc-$V.tar.gz" "sckoc-$V"
+            rpmbuild -bs fedora/sckoc.spec
+            cp /root/rpmbuild/SRPMS/sckoc-"$V"-*.src.rpm /src/
+            cp fedora/sckoc.spec /src/sckoc.spec
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: review-srpm
+          path: |
+            *.src.rpm
+            sckoc.spec
+
   release:
     needs:
       - build-deb
       - build-rpm
+      - review-srpm
     runs-on: ubuntu-latest
 
     steps:
@@ -104,6 +134,7 @@ jobs:
           files: |
             *.deb
             *.rpm
+            sckoc.spec
 
   apt-repo:
     needs: build-deb
