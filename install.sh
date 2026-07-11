@@ -23,7 +23,7 @@ T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cat > "$T/version.h" <<'VER_H'
 #ifndef SCKOC_VERSION_H
 #define SCKOC_VERSION_H
-#define VERSION_STRING "2.0.0"
+#define VERSION_STRING "2.1.0"
 #endif
 VER_H
 cat > "$T/readoc.c" <<'READOC_C'
@@ -370,7 +370,7 @@ cat > /usr/local/bin/sckoc <<'MSR_SH'
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
 # sckoc: Intel/AMD read-only hardware monitor (no writes)
-MSRVER=2.0.0
+MSRVER=2.1.0
 set -e
 LIBEXEC=/usr/libexec/sckoc
 READOC="${READOC:-$( [ -x "$LIBEXEC/readoc" ] && echo "$LIBEXEC/readoc" || command -v readoc || echo /usr/local/bin/readoc )}"
@@ -549,8 +549,9 @@ platform_info(){
       oc="  OC Lock $( [ "$(bits "$v194" 20 1)" = 1 ] && echo Enabled || echo Disabled)"
     fi
   fi
-  local smt numa smu=""
+  local smt smtlab numa smu=""
   smt=$( [ "$(cat "$CPUROOT/smt/active" 2>/dev/null)" = 1 ] && echo On || echo Off)
+  smtlab=$( [ "$VEN" = GenuineIntel ] && echo HT || echo SMT)   # Intel calls it Hyper-Threading
   numa=$(ls -d "${NODEROOT:-/sys/devices/system/node}"/node[0-9]* 2>/dev/null | wc -l)
   if [ "$VEN" = AuthenticAMD ]; then
     local sv
@@ -562,7 +563,7 @@ platform_info(){
     fi
   fi
   echo "== Platform =="
-  printf "  Secure Boot %s  Lockdown %s%s  SMT %s  NUMA %s node(s)%s\n" "$sb" "$ld" "$oc" "$smt" "$numa" "$smu"
+  printf "  Secure Boot %s  Lockdown %s%s  %s %s  NUMA %s node(s)%s\n" "$sb" "$ld" "$oc" "$smtlab" "$smt" "$numa" "$smu"
   local h n lab v out=""
   for h in /sys/class/hwmon/hwmon*; do
     n=$(cat "$h/name" 2>/dev/null) || continue
