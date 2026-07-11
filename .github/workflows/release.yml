@@ -75,15 +75,16 @@ jobs:
       # 复刻 packaging/make-review-srpm.sh 的容器配方:fedora + rpmautospec,
       # 对 fedora/sckoc.spec 做 rpmbuild -bs;%autorelease 在无 git 元数据时
       # 自动落到 Release 1(与 2.0.0 审核 SRPM 的生成方式一致)。
+      # 注意:Source0 必须用 spectool 下载 GitHub 生成的原件 tarball,
+      # 不能自行打包——否则内容相同但 gzip 字节不同,fedora-review 的
+      # "Sources match upstream" 校验和会不一致(2.1.1 报告踩过此坑)。
       - name: build review SRPM (fedora spec)
         run: |
           docker run --rm -v "$PWD":/src -w /src fedora:latest bash -ec '
-            dnf -y install rpm-build rpmdevtools rpmautospec tar gzip
+            dnf -y install rpm-build rpmdevtools rpmautospec
             V=$(sed -n "s/^Version:[[:space:]]*//p" fedora/sckoc.spec)
-            mkdir -p /root/rpmbuild/SOURCES "/tmp/sckoc-$V"
-            cp -r . "/tmp/sckoc-$V/"
-            rm -rf "/tmp/sckoc-$V/.git"
-            tar -C /tmp -czf "/root/rpmbuild/SOURCES/sckoc-$V.tar.gz" "sckoc-$V"
+            mkdir -p /root/rpmbuild/SOURCES
+            spectool -g -C /root/rpmbuild/SOURCES fedora/sckoc.spec
             rpmbuild -bs fedora/sckoc.spec
             cp /root/rpmbuild/SRPMS/sckoc-"$V"-*.src.rpm /src/
             cp fedora/sckoc.spec /src/sckoc.spec
