@@ -6,7 +6,7 @@ set -e
 OLD=$( { /usr/local/bin/sckoc -V 2>/dev/null || /usr/local/bin/msr -V 2>/dev/null; } | grep -E "^(msr|sckoc)" || true)
 [ -n "$OLD" ] && echo "== old version detected: $OLD, upgrading =="
 rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr \
-      /usr/local/bin/hsmp-fclk /usr/local/bin/hsmp-msg \
+      /usr/local/bin/hsmp-fclk /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
       /etc/bash_completion.d/sckoc
 
 command -v gcc >/dev/null || {
@@ -23,7 +23,7 @@ T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cat > "$T/version.h" <<'VER_H'
 #ifndef SCKOC_VERSION_H
 #define SCKOC_VERSION_H
-#define VERSION_STRING "2.0.0"
+#define VERSION_STRING "2.1.0"
 #endif
 VER_H
 cat > "$T/readoc.c" <<'READOC_C'
@@ -207,17 +207,197 @@ int main(int argc, char *argv[])
 HSMP_C
 gcc -Wall -O2 "$T/hsmp-msg.c" -o /usr/local/bin/hsmp-msg
 
+cat > "$T/tpmi-uncore.c" <<'TPMI_C'
+/* tpmi-uncore.c - read-only Intel TPMI uncore frequency reader for sckoc
+ *
+ * Finds OOBMSM PCI devices carrying the TPMI VSEC (ID 0x42), parses the
+ * PFS directory in the BAR, locates the Uncore Frequency feature (TPMI ID 2)
+ * and prints, one line per fabric cluster:
+ *
+ *     <dev-index> <cur-MHz> <min-MHz> <max-MHz>
+ *
+ * Field layout verified against intel-uncore-frequency-tpmi.c and anchored
+ * on live data (Xeon 658X: mesh 2900/2900/2900, IOD 2500/800/2500 x2).
+ *
+ * Strictly read-only: O_RDONLY, PROT_READ. Never writes to hardware.
+ * Env: TPMI_PCI_ROOT overrides /sys/bus/pci/devices (for testing).
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+#define VSEC_CAP_ID     0x000b
+#define VSEC_ID_TPMI    0x0042
+#define TPMI_ID_UNCORE  0x02
+
+static uint32_t cfg_dw(const uint8_t *cfg, size_t len, size_t off)
+{
+    if (off + 4 > len) return 0;
+    return (uint32_t)cfg[off] | (uint32_t)cfg[off+1] << 8 |
+           (uint32_t)cfg[off+2] << 16 | (uint32_t)cfg[off+3] << 24;
+}
+
+/* decode one uncore feature region; returns clusters printed */
+static int decode_uncore(volatile uint8_t *bar, size_t barsz, uint64_t off,
+                         int nent, int esz_dw, int devidx)
+{
+    int printed = 0;
+    size_t stride = (size_t)esz_dw * 4;
+
+    for (int i = 0; i < nent; i++) {
+        volatile uint8_t *inst = bar + off + (size_t)i * stride;
+        if (off + (size_t)(i + 1) * stride > barsz) break;
+
+        uint64_t hdr = *(volatile uint64_t *)inst;
+        if ((uint32_t)hdr == 0xffffffffu) continue;      /* absent die */
+
+        int nclus = (int)((hdr >> 8) & 0xff);
+        if (nclus <= 0 || nclus > 8) continue;
+
+        uint64_t offs = *(volatile uint64_t *)(inst + 8); /* cluster offset bytes */
+        for (int c = 0; c < nclus; c++) {
+            unsigned cb = ((offs >> (8 * c)) & 0xff) * 8; /* 8-byte units */
+            if (cb + 16 > stride) continue;
+            volatile uint8_t *cl = inst + cb;
+
+            uint64_t status  = *(volatile uint64_t *)(cl + 0);
+            uint64_t control = *(volatile uint64_t *)(cl + 8);
+
+            unsigned cur = (unsigned)(status & 0x7f) * 100;
+            unsigned max = (unsigned)((control >> 8)  & 0x7f) * 100;
+            unsigned min = (unsigned)((control >> 15) & 0x7f) * 100;
+            if (!cur) continue;                            /* sanity */
+            printf("%d %u %u %u\n", devidx, cur, min, max);
+            printed++;
+        }
+    }
+    return printed;
+}
+
+static int probe_device(const char *root, const char *bdf, int devidx)
+{
+    char path[512];
+    uint8_t cfg[4096];
+
+    snprintf(path, sizeof path, "%s/%s/config", root, bdf);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+    ssize_t clen = read(fd, cfg, sizeof cfg);
+    close(fd);
+    if (clen < 0x104) return 0;                    /* no extended caps */
+    if (cfg_dw(cfg, clen, 0) == 0xffffffffu) return 0;
+    if ((cfg_dw(cfg, clen, 0) & 0xffff) != 0x8086) return 0;  /* Intel only */
+
+    /* walk PCIe extended capabilities for VSEC id 0x42 (TPMI) */
+    size_t cap = 0x100;
+    int bir = -1; uint64_t tbl_off = 0; int guard = 64;
+    while (cap && guard--) {
+        uint32_t h = cfg_dw(cfg, clen, cap);
+        if ((h & 0xffff) == VSEC_CAP_ID) {
+            uint32_t h1 = cfg_dw(cfg, clen, cap + 4);
+            if ((h1 & 0xffff) == VSEC_ID_TPMI) {
+                uint32_t tbl = cfg_dw(cfg, clen, cap + 0xc);
+                bir = tbl & 7;
+                tbl_off = tbl & ~7u;
+                break;
+            }
+        }
+        cap = (h >> 20) & 0xffc;
+    }
+    if (bir < 0) return 0;
+
+    snprintf(path, sizeof path, "%s/%s/resource%d", root, bdf, bir);
+    fd = open(path, O_RDONLY);
+    if (fd < 0) { perror("open BAR (root required)"); return 0; }
+    struct stat st;
+    if (fstat(fd, &st) < 0 || st.st_size <= 0) { close(fd); return 0; }
+    size_t barsz = (size_t)st.st_size;
+
+    volatile uint8_t *bar = mmap(NULL, barsz, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (bar == MAP_FAILED) { perror("mmap BAR (lockdown enabled?)"); return 0; }
+
+    /* PFS directory: 8-byte entries at tbl_off. Count comes from the VSEC
+     * num_entries byte, but scanning until an all-ones/zero-size entry is
+     * equally safe and avoids re-reading config. Cap at 64.               */
+    int printed = 0;
+    for (int e = 0; e < 64; e++) {
+        uint64_t q = *(volatile uint64_t *)(bar + tbl_off + (size_t)e * 8);
+        if ((uint32_t)q == 0xffffffffu) break;
+        unsigned id   = q & 0xff;
+        unsigned nent = (q >> 8) & 0xff;
+        unsigned esz  = (q >> 16) & 0xffff;          /* dwords */
+        uint64_t coff = ((q >> 32) & 0xffff) * 1024; /* KB units */
+        if (!nent || !esz) break;
+        if (id == TPMI_ID_UNCORE) {
+            printed = decode_uncore(bar, barsz, coff, nent, esz, devidx);
+            break;
+        }
+    }
+    munmap((void *)bar, barsz);
+    return printed;
+}
+
+int main(void)
+{
+    const char *root = getenv("TPMI_PCI_ROOT");
+    if (!root) root = "/sys/bus/pci/devices";
+
+    struct dirent **list;
+    int n = scandir(root, &list, NULL, alphasort);
+    if (n < 0) { perror("scandir"); return 1; }
+
+    int devidx = 0, total = 0;
+    for (int i = 0; i < n; i++) {
+        if (list[i]->d_name[0] == '.') { free(list[i]); continue; }
+        int p = probe_device(root, list[i]->d_name, devidx);
+        if (p > 0) { devidx++; total += p; }
+        free(list[i]);
+    }
+    free(list);
+    return total > 0 ? 0 : 1;
+}
+TPMI_C
+gcc -Wall -O2 -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 "$T/tpmi-uncore.c" -o /usr/local/bin/tpmi-uncore
+
 cat > /usr/local/bin/sckoc <<'MSR_SH'
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
 # sckoc: Intel/AMD read-only hardware monitor (no writes)
-MSRVER=2.0.0
+MSRVER=2.1.0
 set -e
 LIBEXEC=/usr/libexec/sckoc
 READOC="${READOC:-$( [ -x "$LIBEXEC/readoc" ] && echo "$LIBEXEC/readoc" || command -v readoc || echo /usr/local/bin/readoc )}"
 INT="${INT:-1}"
 rf(){ "$READOC" -p "$1" -u "$2" 2>/dev/null || echo 0; }
 bits(){ echo $(( ($1 >> $2) & ((1 << $3) - 1) )); }
+
+# --- ryzen_smu PM-table fallback (read-only) ---------------------------------
+# Consumer Ryzen has no HSMP, and pre-6.x kernels lack fam-1Ah k10temp; the
+# out-of-tree ryzen_smu driver exposes the SMU power-metrics table instead.
+# Offsets below are ONLY used when the table version matches the layout they
+# were verified against (Granite Ridge / 9950X3D, anchors: FCLK=BIOS 2000,
+# MCLK=DDR5-6000 1:1, per-core freq vs APERF/MPERF). Unknown version => N/A.
+SMUDRV="${SMUDRV:-/sys/kernel/ryzen_smu_drv}"
+SMU_PMT_VER=00620205  # fam26 Granite Ridge
+# verified offsets: 0x0C PPT W | 0x2C Tctl degC | 0x11C FCLK | 0x13C MCLK
+#                   0x534+4i per-core degC (16) | 0x570+4i per-core GHz
+# SVI3 rails:       0x48 VDDCR_CPU V | 0xD8/0xDC/0xE0 SOC V/A/W (VxA=W verified)
+#                   0xA8 VDDIO_MEM V | 0xE8 VDD_MISC V (1.1 nominal; not DIMM VDDQ)
+smu_ok(){
+  [ -r "$SMUDRV/pm_table" ] && [ -r "$SMUDRV/pm_table_version" ] || return 1
+  [ "$(od -An -tx4 -N4 "$SMUDRV/pm_table_version" 2>/dev/null | tr -d ' \n')" = "$SMU_PMT_VER" ]
+}
+smu_f(){ od -An -j "$1" -N4 -tf4 "$SMUDRV/pm_table" 2>/dev/null | awk '{printf "%.1f",$1}'; }
+smu_f3(){ od -An -j "$1" -N4 -tf4 "$SMUDRV/pm_table" 2>/dev/null | awk '{printf "%.3f",$1}'; }
+smu_fi(){ od -An -j "$1" -N4 -tf4 "$SMUDRV/pm_table" 2>/dev/null | awk '{printf "%d",$1}'; }
+# ------------------------------------------------------------------------------
 
 usage(){
   cat <<USAGE
@@ -248,7 +428,11 @@ NOTES:
   Root required. Reads only - never writes MSRs (Secure Boot / lockdown safe).
   Intel needs the msr module. AMD FCLK/PPT need /dev/hsmp (amd_hsmp or hsmp_acpi
   plus BIOS HSMP). AMD temperature needs k10temp. Voltage rails need a board
-  Super I/O driver (nct6775 etc).
+  Super I/O driver (nct6775 etc). On consumer Ryzen (no HSMP) or old kernels
+  (no fam-1Ah k10temp), the out-of-tree ryzen_smu driver is used as a read-only
+  fallback for temperature/FCLK/PPT/Vcore when present; values are marked (smu).
+  On TPMI-era Xeon (Granite Rapids+) with pre-6.5 kernels, mesh/IOD frequency
+  is read directly from TPMI MMIO by the tpmi-uncore helper; marked (tpmi).
 USAGE
 }
 case "${1:-}" in
@@ -267,7 +451,7 @@ case "${1:-}" in
     if command -v dpkg >/dev/null && dpkg -s sckoc >/dev/null 2>&1; then
       { command -v apt-get >/dev/null && apt-get -y remove sckoc; } || dpkg -r sckoc
     fi
-    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg \
+    rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
           /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
           /etc/bash_completion.d/sckoc \
           /etc/modules-load.d/msr.conf /etc/modules-load.d/sckoc.conf /etc/modules-load.d/sckoc-amd.conf /etc/modules-load.d/sckoc-sensors.conf /usr/lib/modules-load.d/sckoc.conf \
@@ -282,9 +466,15 @@ case "${1:-}" in
       echo "      remove manually: dkms remove -m amd_hsmp -v <ver> --all; rm -rf /usr/src/amd_hsmp-<ver>"
     fi
     rm -rf /var/lib/sckoc
+    if command -v dkms >/dev/null 2>&1 && dkms status 2>/dev/null | grep -q '^ryzen[-_]smu'; then
+      echo "note: DKMS ryzen_smu is third-party (optional sckoc data source) - kept."
+      echo "      remove manually: dkms remove -m ryzen_smu -v <ver> --all; rm -rf /usr/src/ryzen_smu-<ver>;"
+      echo "      rm -f /etc/modules-load.d/ryzen_smu.conf"
+    fi
     if command -v dnf >/dev/null && dnf copr list 2>/dev/null | grep -q sckoc; then
       dnf -y copr remove skywalkeramd/sckoc 2>/dev/null || dnf -y copr disable skywalkeramd/sckoc 2>/dev/null || true
     fi
+    rm -f /etc/yum.repos.d/_copr*skywalkeramd*sckoc*.repo
     echo "sckoc fully removed. (shared deps gcc/dmidecode/dkms/git kept; loaded kernel modules stay until reboot)"
     exit 0 ;;
 esac
@@ -359,17 +549,21 @@ platform_info(){
       oc="  OC Lock $( [ "$(bits "$v194" 20 1)" = 1 ] && echo Enabled || echo Disabled)"
     fi
   fi
-  local smt numa smu=""
+  local smt smtlab numa smu=""
   smt=$( [ "$(cat "$CPUROOT/smt/active" 2>/dev/null)" = 1 ] && echo On || echo Off)
+  smtlab=$( [ "$VEN" = GenuineIntel ] && echo HT || echo SMT)   # Intel calls it Hyper-Threading
   numa=$(ls -d "${NODEROOT:-/sys/devices/system/node}"/node[0-9]* 2>/dev/null | wc -l)
   if [ "$VEN" = AuthenticAMD ]; then
     local sv
     if sv=$(hsmp_q 0x02 1 0); then
       smu="  SMU FW $(( (sv>>16)&255 )).$(( (sv>>8)&255 )).$(( sv&255 ))"
+    elif [ -r "$SMUDRV/version" ]; then
+      sv=$(sed 's/^SMU v//' "$SMUDRV/version" 2>/dev/null | tr -d '\n')
+      [ -n "$sv" ] && smu="  SMU FW $sv (smu)"
     fi
   fi
   echo "== Platform =="
-  printf "  Secure Boot %s  Lockdown %s%s  SMT %s  NUMA %s node(s)%s\n" "$sb" "$ld" "$oc" "$smt" "$numa" "$smu"
+  printf "  Secure Boot %s  Lockdown %s%s  %s %s  NUMA %s node(s)%s\n" "$sb" "$ld" "$oc" "$smtlab" "$smt" "$numa" "$smu"
   local h n lab v out=""
   for h in /sys/class/hwmon/hwmon*; do
     n=$(cat "$h/name" 2>/dev/null) || continue
@@ -387,7 +581,7 @@ wt4(){ awk "BEGIN{printf \"%.4f\", $1}"; }
 
 UNC="${UNCSYS:-/sys/devices/system/cpu/intel_uncore_frequency}"
 intel_uncore(){
-  local d pk mesh="" iod="" lo="" hi=""
+  local d pk mesh="" iod="" lo="" hi="" tag=""
   [ -d "$UNC" ] || modprobe intel-uncore-frequency-tpmi 2>/dev/null || modprobe intel-uncore-frequency 2>/dev/null || true
   for d in "$UNC"/uncore* "$UNC"/package_0"$1"_die_*; do
     [ -e "$d/current_freq_khz" ] || continue
@@ -398,6 +592,30 @@ intel_uncore(){
       hi=$(( $(cat "$d/max_freq_khz" 2>/dev/null || echo 0) / 1000 ))
     else iod="$iod $(( $(cat "$d/current_freq_khz") / 1000 ))"; fi
   done
+  if [ -z "$mesh" ]; then
+    # pre-TPMI Xeon: uncore ratio MSRs (0x621 current, 0x620 min/max)
+    local v621 cur
+    if v621=$("$READOC" -p "$2" -u 0x621 2>/dev/null) && cur=$(( (v621 & 127) * 100 )) && [ "$cur" -gt 0 ]; then
+      mesh=$cur
+      lo=$(( $(bits "$(rf "$2" 0x620)" 8 7) * 100 ))
+      hi=$(( $(bits "$(rf "$2" 0x620)" 0 7) * 100 ))
+    fi
+  fi
+  if [ -z "$mesh" ]; then
+    # TPMI-era Xeon (GNR+) on pre-6.5 kernels: read the uncore TPMI MMIO
+    # region directly via the read-only tpmi-uncore helper. OOBMSM device
+    # order is assumed to match package order.
+    local tp tl tc tn tx
+    tp="${TPMIU:-$( [ -x "$LIBEXEC/tpmi-uncore" ] && echo "$LIBEXEC/tpmi-uncore" || command -v tpmi-uncore || echo /usr/local/bin/tpmi-uncore )}"
+    if [ -x "$tp" ]; then
+      tl=$("$tp" 2>/dev/null | awk -v s="$1" '$1==s{print $2,$3,$4}')
+      while read -r tc tn tx; do
+        [ -n "$tc" ] || continue
+        if [ -z "$mesh" ]; then mesh=$tc; lo=$tn; hi=$tx; else iod="$iod $tc"; fi
+      done <<< "$tl"
+      [ -n "$mesh" ] && tag=" (tpmi)"
+    fi
+  fi
   if [ -n "$mesh" ]; then
     local it="" m0="Mesh"; set -- $iod
     case $# in
@@ -406,13 +624,9 @@ intel_uncore(){
       3) m0="Mesh0"; it="  Mesh1 $1 MHz  IOD-S $2 MHz  IOD-N $3 MHz" ;;
       *) it="  IOD $(echo $iod | tr " " "/") MHz" ;;
     esac
-    printf "%s %s MHz (Min %s, Max %s)%s" "$m0" "$mesh" "$lo" "$hi" "$it"
+    printf "%s %s MHz (Min %s, Max %s)%s%s" "$m0" "$mesh" "$lo" "$hi" "$it" "$tag"
   else
-    local v621 cur
-    if v621=$("$READOC" -p "$2" -u 0x621 2>/dev/null) && cur=$(( (v621 & 127) * 100 )) && [ "$cur" -gt 0 ]; then
-      printf "Mesh %d MHz (Min %d, Max %d)" "$cur" \
-        $(( $(bits "$(rf "$2" 0x620)" 8 7) * 100 )) $(( $(bits "$(rf "$2" 0x620)" 0 7) * 100 ))
-    else printf "Mesh N/A (need intel-uncore-frequency driver)"; fi
+    printf "Mesh N/A (need intel-uncore-frequency driver, or tpmi-uncore helper on pre-6.5 kernels)"
   fi
 }
 intel_sock(){
@@ -482,6 +696,11 @@ amd_temp(){
     fi
     i=$((i+1))
   done
+  # no k10temp sensor for this socket: PM-table Tctl (socket 0 only; table is socket-local)
+  if [ "$1" = 0 ] && smu_ok; then
+    t=$(smu_fi 0x2C)
+    case "$t" in ''|*[!0-9]*) ;; *) [ "$t" -gt 0 ] && [ "$t" -lt 150 ] && { printf "%d°C (smu)" "$t"; return; } ;; esac
+  fi
   printf "N/A (need k10temp)"; }
 hsmp_q(){
   local h="${HSMP:-$( [ -x "$LIBEXEC/hsmp-msg" ] && echo "$LIBEXEC/hsmp-msg" || command -v hsmp-msg || echo /usr/local/bin/hsmp-msg )}"
@@ -489,8 +708,13 @@ hsmp_q(){
   [ -e /dev/hsmp ] && [ -x "$h" ] && "$h" "$@" 2>/dev/null
 }
 amd_fclk(){
-  local out
+  local out f m
   if out=$(hsmp_q 0x0F 2 "$1"); then printf "FCLK %s MHz / MCLK %s MHz" ${out}
+  elif [ "$1" = 0 ] && smu_ok; then
+    f=$(smu_fi 0x11C); m=$(smu_fi 0x13C)
+    printf "FCLK %s MHz / MCLK %s MHz (smu)" "$f" "$m"
+  elif [ "$FAM" -ge 25 ] && ! grep -Eqi 'epyc|threadripper' /proc/cpuinfo 2>/dev/null; then
+    printf "FCLK N/A (consumer Ryzen has no HSMP; ryzen_smu provides it, see README)"
   else printf "FCLK N/A (need amd_hsmp + BIOS HSMP)"; fi
 }
 amd_sock(){
@@ -504,13 +728,21 @@ amd_sock(){
   if pl=$(hsmp_q 0x06 1 "$1"); then
     plm=$(hsmp_q 0x07 1 "$1") || plm=""
     ppt="  PPT $(wt "$pl/1000") W${plm:+ (Max $(wt "$plm/1000") W)}"
+  elif [ "$1" = 0 ] && smu_ok; then
+    pl=$(smu_f 0x0C); [ -n "$pl" ] && ppt="  PPT $pl W (smu)"
   fi
-  # prefer real per-rail vcore from board sensor map; fall back to P-state nominal
+  # prefer real per-rail vcore from board sensor map; then SMU SVI3 telemetry; then P-state nominal
   local vctxt r0 r1
   r0=$(board_vcore VDDCR_CPU0) || r0=""
   r1=$(board_vcore VDDCR_CPU1) || r1=""
   if [ -n "$r0" ] || [ -n "$r1" ]; then
     vctxt="Vcore ${r0:+CPU0 $r0 V}${r0:+  }${r1:+CPU1 $r1 V}"
+  elif [ "$1" = 0 ] && smu_ok; then
+    local sv3; sv3=$(smu_f3 0x48)
+    case "$sv3" in
+      0.???|1.???) vctxt="Vcore $sv3 V (smu SVI3)" ;;
+      *) vctxt="Vcore N/A" ;;
+    esac
   else
     local vc; vc=$(amd_vid "$2")
     if [ -z "$vc" ]; then vctxt="Vcore N/A"
@@ -563,6 +795,29 @@ percore(){
       done
       s=$((s+1))
     done
+    # PM-table fallback: build CCD temps from per-core sensors (max per CCD group)
+    if [ ${#CCDT[@]} -eq 0 ] && smu_ok; then
+      local nc=0 nccd gi gt grel gsz
+      for c in $CPUS; do [ "$(siblings "$c" | head -1)" = "$c" ] && nc=$((nc+1)); done
+      nccd=$(printf '%s\n' "${CCD[@]}" | sort -un | grep -c -v '^-1$' || echo 0)
+      if [ "$nccd" -gt 0 ] && [ "$nc" -ge "$nccd" ]; then
+        gsz=$(( nc / nccd )); [ "$gsz" -lt 1 ] && gsz=1
+        gi=0
+        while [ "$gi" -lt "$nc" ]; do
+          gt=$(smu_fi $(( 0x534 + gi * 4 )))
+          case "$gt" in ''|*[!0-9]*) gi=$((gi+1)); continue ;; esac
+          if [ "$gt" -gt 0 ] && [ "$gt" -lt 150 ]; then
+            grel=$(( gi / gsz ))
+            if [ -z "${CCDT["0:$grel"]}" ] || [ "$gt" -gt "${CCDT["0:$grel"]}" ]; then CCDT["0:$grel"]=$gt; fi
+          fi
+          gi=$((gi+1))
+        done
+      fi
+      if [ -z "${TCTL[0]}" ]; then
+        gt=$(smu_fi 0x2C)
+        case "$gt" in ''|*[!0-9]*) ;; *) [ "$gt" -gt 0 ] && [ "$gt" -lt 150 ] && TCTL[0]=$gt ;; esac
+      fi
+    fi
   fi
   local -A T1 C61
   for c in $CPUS; do
@@ -627,10 +882,11 @@ mon(){
       [ -e "$hf" ] || continue
       case "$(cat "$hf" 2>/dev/null)" in Tccd*) hasccd=1; break ;; esac
     done
+    [ "$hasccd" = 0 ] && smu_ok && hasccd=1
     if [ "$hasccd" = 1 ]; then
       echo "  Core      Freq       Power     CCD-Temp     C0"
     else
-      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; k10temp lacks per-CCD)"
+      echo "  Core      Freq       Power     CCD-Temp     C0   (*C = socket Tctl; per-CCD needs newer k10temp, or ryzen_smu)"
     fi
   fi
   percore
@@ -658,6 +914,14 @@ case "${1:-mon}" in
         echo "  (per-core identical: AMD exposes no per-core voltage; rails are VRM-domain)"
         exit 0
       fi
+      if smu_ok; then
+        echo "== Rails (ryzen_smu PM table, SMU SVI3 telemetry) =="
+        printf "  VDDCR_CPU   %s V\n" "$(smu_f3 0x48)"
+        printf "  VDDCR_SOC   %s V  (%s A, %s W)\n" "$(smu_f3 0xD8)" "$(smu_f 0xDC)" "$(smu_f 0xE0)"
+        printf "  VDDIO_MEM   %s V   VDD_MISC %s V\n" "$(smu_f3 0xA8)" "$(smu_f3 0xE8)"
+        echo "  (per-core identical: single VDDCR rail on AM5; SMU-reported telemetry)"
+        exit 0
+      fi
       v=$(amd_vid 0)
       [ -n "$v" ] || { echo "fam$FAM P-state VID 未验证 (需 zenpower/ryzen_smu 或已收录主板)"; exit 1; }
       if [ "$FAM" -ge 26 ]; then
@@ -676,25 +940,50 @@ case "${1:-mon}" in
   *) echo "sckoc: unknown command '$1'"; echo "try: sckoc help"; exit 1 ;;
 esac
 MSR_SH
-chmod 755 /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg
+chmod 755 /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore
 
 mkdir -p /etc/bash_completion.d
 cat > /etc/bash_completion.d/sckoc <<'COMP_SH'
+# bash completion for sckoc
 _sckoc(){
-  local cur prev
-  cur=${COMP_WORDS[COMP_CWORD]}
-  prev=${COMP_WORDS[COMP_CWORD-1]}
-  local cmds="mon vcore dump uninstall version help -V -h --help"
-  if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "$cmds" -- "$cur"))
+  local cur prev words cword
+  if declare -F _init_completion >/dev/null 2>&1; then
+    _init_completion -n : || return
+  else
+    cur=${COMP_WORDS[COMP_CWORD]}; prev=${COMP_WORDS[COMP_CWORD-1]}
+    words=("${COMP_WORDS[@]}"); cword=$COMP_CWORD
+  fi
+  local cmd=${words[1]:-}
+
+  if [ "$cword" -eq 1 ]; then
+    COMPREPLY=($(compgen -W "mon vcore dump uninstall version help -V -h --help" -- "$cur"))
     return
   fi
-  case "$prev" in
+
+  case "$cmd" in
     dump)
-      COMPREPLY=($(compgen -W "0x10 0x198 0x1A2 0xCE 0xC0010063 0xC0010064 0xC0010299 0xC001029A 0xC001029B" -- "$cur"))
+      if [ "$cword" -eq 2 ]; then
+        # registers sckoc itself decodes, filtered by CPU vendor; hex match is
+        # case-insensitive (both 0xc0010063 and 0xC0010063 complete)
+        local ven intel amd regs w out=()
+        ven=$(awk '/vendor_id/{print $3;exit}' /proc/cpuinfo 2>/dev/null)
+        intel="0x10 0xCE 0xE7 0xE8 0x194 0x198 0x19C 0x1A2 0x1AD 0x3F9 0x3FD 0x606 0x60D 0x610 0x611 0x619 0x620 0x621"
+        amd="0xC0010015 0xC0010063 0xC0010064 0xC0010299 0xC001029A 0xC001029B"
+        case "$ven" in
+          GenuineIntel) regs=$intel ;;
+          AuthenticAMD) regs=$amd ;;
+          *)            regs="$intel $amd" ;;
+        esac
+        for w in $regs; do [[ ${w,,} == "${cur,,}"* ]] && out+=("$w"); done
+        [ ${#out[@]} -gt 0 ] && COMPREPLY=("${out[@]}")
+      elif [ "$cword" -eq 3 ]; then
+        # common bitfields: halves, Intel Vcore 47:32, uncore/ratio fields
+        COMPREPLY=($(compgen -W "63:32 47:32 31:16 31:0 21:15 15:0 14:8 7:0 6:0" -- "$cur"))
+        declare -F __ltrim_colon_completions >/dev/null 2>&1 && __ltrim_colon_completions "$cur"
+      fi
       return ;;
     uninstall)
-      COMPREPLY=($(compgen -W "-y" -- "$cur"))
+      [ "$cword" -eq 2 ] && COMPREPLY=($(compgen -W "-y" -- "$cur"))
       return ;;
   esac
 }

@@ -18,7 +18,7 @@ fi
 
 # 2) script installs + legacy names
 echo "== removing files =="
-rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/rdmsr /usr/local/bin/hsmp-msg \
+rm -f /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/rdmsr /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
       /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
       /etc/bash_completion.d/sckoc
 
@@ -39,11 +39,19 @@ elif command -v dkms >/dev/null 2>&1 && dkms status 2>/dev/null | grep -q '^amd_
 fi
 rm -rf /var/lib/sckoc
 
+# 3c) ryzen_smu is third-party (never installed by sckoc) - keep, but tell the user
+if command -v dkms >/dev/null 2>&1 && dkms status 2>/dev/null | grep -q '^ryzen[-_]smu'; then
+  echo "== note: DKMS ryzen_smu is third-party (used by sckoc as an optional data source) - kept =="
+  echo "   remove manually if unwanted: dkms remove -m ryzen_smu -v <ver> --all;"
+  echo "   rm -rf /usr/src/ryzen_smu-<ver>; rm -f /etc/modules-load.d/ryzen_smu.conf"
+fi
+
 # 4) repo configs we may have suggested
 rm -f /etc/apt/sources.list.d/sckoc.list
 if command -v dnf >/dev/null && dnf copr list 2>/dev/null | grep -q sckoc; then
   dnf -y copr remove skywalkeramd/sckoc 2>/dev/null || dnf -y copr disable skywalkeramd/sckoc 2>/dev/null || true
 fi
+rm -f /etc/yum.repos.d/_copr*skywalkeramd*sckoc*.repo   # fallback if the copr plugin is gone
 
 # 5) optional dependency purge (dangerous: shared system packages)
 if [ "$PURGE" = 1 ]; then
@@ -55,7 +63,14 @@ fi
 
 # 6) verify
 LEFT=""
-for f in /usr/local/bin/sckoc /usr/local/bin/readoc /usr/bin/sckoc /usr/local/bin/rdmsr /usr/libexec/sckoc; do
+for f in /usr/local/bin/sckoc /usr/local/bin/readoc /usr/local/bin/hsmp-msg /usr/local/bin/tpmi-uncore \
+         /usr/local/bin/rdmsr /usr/local/bin/msr /usr/local/bin/msr-w890e /usr/local/bin/msr-tr /usr/local/bin/hsmp-fclk \
+         /usr/bin/sckoc /usr/libexec/sckoc \
+         /etc/bash_completion.d/sckoc \
+         /etc/modules-load.d/msr.conf /etc/modules-load.d/sckoc.conf \
+         /etc/modules-load.d/sckoc-amd.conf /etc/modules-load.d/sckoc-sensors.conf \
+         /usr/lib/modules-load.d/sckoc.conf \
+         /var/lib/sckoc /etc/apt/sources.list.d/sckoc.list; do
   [ -e "$f" ] && LEFT="$LEFT $f"
 done
 if [ -n "$LEFT" ]; then echo "== WARNING: leftovers:$LEFT =="; exit 1; fi
