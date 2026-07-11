@@ -27,9 +27,10 @@ frequency (core, mesh, IOD and DRAM), power (RAPL, PL1/PL2, PPT), C-state
 residency and platform security state. Being read-only it works under Secure
 Boot and kernel lockdown (integrity).
 
-The tool reads MSRs through /dev/cpu/*/msr and, on AMD, HSMP through /dev/hsmp.
-Loading the required kernel modules (msr, k10temp, amd_hsmp) and any BIOS setup
-is left to the administrator and is intentionally not done by this package.
+The tool reads Model-Specific Registers via the kernel MSR interface and, on
+AMD, queries the HSMP interface. Loading the required kernel modules and any
+BIOS setup is left to the administrator and is intentionally not done by this
+package.
 
 %prep
 %autosetup
