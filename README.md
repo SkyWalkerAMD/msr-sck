@@ -1,8 +1,10 @@
 # sckoc
 
+> English documentation: [README.en.md](README.en.md)
+
 面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控软件。以单一命令给出 Platform、每 Socket、每核心三个层次的完整视图，覆盖电压、温度、频率、功耗、C-state 驻留与平台安全状态。软件采用纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
 
-**当前版本: 2.2.1**
+**当前版本: 2.3.0**
 
 ## 设计原则
 
@@ -73,11 +75,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/install.sh | sudo
 
 ```bash
 # Fedora：下载与你的版本匹配的 fcNN 包（示例为 Fedora 44，文件名以 Releases 页实际为准）
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.2.1/sckoc-2.2.1-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.3.0/sckoc-2.3.0-1.fc44.x86_64.rpm
 # Rocky / Alma / RHEL / CentOS Stream：下载对应 elN 包（示例为 EL8）；更推荐方式三的 COPR，自动匹配发行版
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.2.1/sckoc-2.2.1-1.el8.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.3.0/sckoc-2.3.0-1.el8.x86_64.rpm
 # Ubuntu / Debian
-sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.2.1/sckoc_2.2.1-1_amd64.deb
+sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/2.3.0/sckoc_2.3.0-1_amd64.deb
 ```
 
 注：RPM 二进制包与构建它的发行版绑定（glibc/依赖不同），fcNN 包装不进 RHEL 系，elN 包也装不进 Fedora，请按发行版取对应资产。
@@ -106,7 +108,7 @@ echo "deb [trusted=yes] https://skywalkeramd.github.io/sckoc/apt stable main" | 
 sudo apt update && sudo apt install sckoc
 ```
 
-注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-2.2.1.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
+注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-2.3.0.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
 
 ## 使用
 
@@ -114,6 +116,7 @@ sudo apt update && sudo apt install sckoc
 sudo sckoc                    # 完整监控概览（默认 mon）
 sudo sckoc vcore              # 逐核 / 逐 rail 核心电压
 sudo sckoc uncore             # uncore/mesh 频率限制 + BIOS 开机值（Intel）
+sudo sckoc --json             # 机器可读 JSON 输出（mon 与 uncore 均支持 --json）
 sudo sckoc dump 0x198 47:32   # 逐 socket 读任意 MSR 位段
 sudo sckoc help               # 详细用法与示例
 sudo sckoc -V                 # 版本
@@ -121,13 +124,13 @@ sudo INT=2 sckoc              # 采样窗口 2 秒（默认 1 秒）
 sudo watch -n 3 sckoc         # 持续刷新
 ```
 
-支持 Tab 补全：子命令（mon/vcore/uncore/dump/uninstall/help/version）、`dump` 后常用 MSR 寄存器、`uninstall` 后的 `-y` 选项。
+支持 Tab 补全：子命令（mon/vcore/uncore/dump/uninstall/help/version）与 `--json`、`dump` 后常用 MSR 寄存器、`uninstall` 后的 `-y` 选项。
 
 各子命令说明：
 
-- `mon`（默认）：输出 Platform、每 Socket、每核心三段完整面板
+- `mon`（默认）：输出 Platform、每 Socket、每核心三段完整面板；逐核温度距 TjMax 不足 10°C 的行以 `!` 标出；加 `--json` 输出机器可读 v1（schema `sckoc-mon-v1`，含 socket 与逐核核心字段）
 - `vcore`：Intel 显示逐核 `0x198` VID 请求电压（PCU/FIVR 目标值，未含掉压，非实测），AMD 显示逐 rail 真实电压（已收录主板）或 P-state 标称值
-- `uncore`：逐 domain 显示 uncore/mesh 频率限制（仅 Intel）；sysfs 路径下同时显示 BIOS 开机值（`initial_*_freq_khz`），运行时限制被改过会以 `*` 标出；MSR/TPMI 降级路径无开机值概念，该两列显示 `-`
+- `uncore`：逐 domain 显示 uncore/mesh 频率限制（仅 Intel）；sysfs 路径下同时显示 BIOS 开机值（`initial_*_freq_khz`），运行时限制被改过会以 `*` 标出；MSR/TPMI 降级路径无开机值概念，该两列显示 `-`；加 `--json` 输出 `sckoc-uncore-v1`；sysfs 驱动可用时本命令不依赖 msr 模块
 - `dump <reg> [hi:lo]`：在每个 socket 上读取指定 MSR，可选 `hi:lo` 只取位段，例如 `dump 0x198 47:32`
 - `uninstall [-y]`：自动识别安装方式并完整卸载，`-y` 跳过确认
 - `help` / `-h`：详细用法、环境变量、示例
@@ -153,12 +156,13 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/uninstall.sh | su
 
 ## 依赖与权限
 
-需要 root 与 `msr` 内核模块（安装器已处理）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp，电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景外全部功能在 Secure Boot + lockdown=integrity 下可用，DKMS 模块在 Secure Boot 下需 MOK 签名。
+需要 root 与 `msr` 内核模块（安装器已处理；`sckoc uncore` 在 intel-uncore-frequency sysfs 驱动可用时不依赖 msr 模块）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp，电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景外全部功能在 Secure Boot + lockdown=integrity 下可用，DKMS 模块在 Secure Boot 下需 MOK 签名。
 
 ## 项目状态
 
 - **分发渠道**：GitHub Releases（rpm / deb / 源码）、COPR（Fedora / RHEL / EPEL 8-10 / Amazon Linux）、GitHub Pages apt 仓库
 - **Fedora 官方仓库**：审核提交进行中
+- **多路（2S+）平台**：代码按多 socket 设计实现，尚未经双路真机验证，欢迎实测反馈
 
 欢迎通过 [Issues](https://github.com/SkyWalkerAMD/sckoc/issues) 反馈问题或提交主板 Super I/O 通道映射，以扩充已收录主板列表。
 
