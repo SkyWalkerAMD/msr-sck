@@ -97,11 +97,21 @@ jobs:
             *.src.rpm
             sckoc.spec
 
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run regression suite
+        run: sudo bash tests/run.sh
+
   release:
     needs:
       - build-deb
       - build-rpm
       - review-srpm
+      - tests
     runs-on: ubuntu-latest
 
     steps:
