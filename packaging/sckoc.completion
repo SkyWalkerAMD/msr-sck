@@ -11,7 +11,7 @@ _sckoc(){
   local cmd=${words[1]:-}
 
   if [ "$cword" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "mon vcore uncore dump uninstall version help --json -V -h --help" -- "$cur"))
+    COMPREPLY=($(compgen -W "mon info vid uncore dump uninstall version help --json -V -h --help" -- "$cur"))
     return
   fi
 
@@ -32,7 +32,7 @@ _sckoc(){
         for w in $regs; do [[ ${w,,} == "${cur,,}"* ]] && out+=("$w"); done
         [ ${#out[@]} -gt 0 ] && COMPREPLY=("${out[@]}")
       elif [ "$cword" -eq 3 ]; then
-        # common bitfields: halves, Intel Vcore 47:32, uncore/ratio fields
+        # common bitfields: halves, Intel VID 47:32, uncore/ratio fields
         COMPREPLY=($(compgen -W "63:32 47:32 31:16 31:0 21:15 15:0 14:8 7:0 6:0" -- "$cur"))
         declare -F __ltrim_colon_completions >/dev/null 2>&1 && __ltrim_colon_completions "$cur"
       fi

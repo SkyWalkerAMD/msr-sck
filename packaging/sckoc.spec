@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 Name:           sckoc
-Version:        2.3.0
+Version:        2.6.0
 Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
@@ -75,6 +75,31 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Sun Jul 19 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.6.0-1
+- info: grow into a full static platform report - CPU identity with the
+  configured ratio ceilings (base/max-efficiency/min) and programmable
+  flags from 0xCE, turbo ratio limit bins (0x1AD/0x1AE), thermal config
+  (TjMax and TCC/PROCHOT offset), RAPL power limits with time windows and
+  the package power envelope (0x614 TDP/min/max), per-DIMM memory config
+  and cache topology; MSR blocks degrade individually without the module
+
+* Sat Jul 18 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.5.0-1
+- rename: the 'vcore' subcommand is now 'vid' (the Intel reading is the
+  0x198 request voltage, not a measured Vcore); 'vcore' stays as a
+  deprecated alias, completion lists only 'vid'
+- new 'sckoc info' command: platform configuration (Secure Boot, lockdown,
+  OC Lock, HT/SMT, NUMA, SMU FW) plus the RAPL PL1/PL2 power limits;
+  works without the msr module (MSR-sourced items omitted)
+- monitor panel slimmed to key live data: the Platform line and the
+  PL1/PL2 row moved to 'sckoc info'; base clock moved onto the CPU block
+  line; board voltage rails stay on the monitor (live data)
+- vid output header and the AMD fallback message are English now; help
+  regrouped into Overview/Detail/Maintenance sections
+- --json schemas unchanged (sckoc-mon-v1 / sckoc-uncore-v1)
+- docs: Chinese README no longer calls the Intel 0x198 reading a measured
+  voltage; READMEs, man page and completion updated for vid/info
+- tests: rename/alias/info/panel-layout coverage added
+
 * Fri Jul 17 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.3.0-1
 - readoc: batch protocol (-p CPU list plus comma-separated registers; one
   "<cpu> <reg> <value>" line per readable pair) - the monitor now samples

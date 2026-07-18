@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH SCKOC 1 "July 2026" "sckoc 2.3.0" "User Commands"
+.TH SCKOC 1 "July 2026" "sckoc 2.6.0" "User Commands"
 .SH NAME
 sckoc \- read-only MSR/HSMP hardware monitor for Intel and AMD systems
 .SH SYNOPSIS
@@ -7,7 +7,9 @@ sckoc \- read-only MSR/HSMP hardware monitor for Intel and AMD systems
 .RI [ mon ]
 .RB [ \-\-json ]
 .br
-.B sckoc vcore
+.B sckoc info
+.br
+.B sckoc vid
 .br
 .B sckoc uncore
 .RB [ \-\-json ]
@@ -27,9 +29,15 @@ sckoc \- read-only MSR/HSMP hardware monitor for Intel and AMD systems
 .SH DESCRIPTION
 .B sckoc
 is a read-only hardware monitor for Intel and AMD servers and workstations.
-It reports per-socket and per-core voltage, temperature, frequency (core,
-mesh, IOD and DRAM), power (RAPL, PL1/PL2, PPT), C-state residency and
-platform security state.
+The monitor panel reports key live data: per-socket and per-core voltage,
+temperature, frequency (core, mesh, IOD and DRAM), power and C-state
+residency. Static platform configuration (security state, PL1/PL2 power
+limits) and per-topic detail are reported by the
+.BR info ,
+.B vid
+and
+.B uncore
+commands.
 .PP
 Readings are taken from Model-Specific Registers through
 .I /dev/cpu/*/msr
@@ -42,8 +50,8 @@ Root privileges are required.
 .SH COMMANDS
 .TP
 .RI [ mon ]
-Print the full monitor panel once. This is the default when no argument is
-given. Combine with
+Print the monitor panel once (key live metrics per socket and per core).
+This is the default when no argument is given. Combine with
 .BR watch (1)
 for a continuously refreshing display.
 With
@@ -52,11 +60,34 @@ the panel is replaced by a machine-readable JSON document (schema
 sckoc\-mon\-v1) carrying per-socket and per-core essentials. Per-core
 rows within 10\(deC of TjMax are flagged with an exclamation mark.
 .TP
+.B info
+Print the static platform report: everything that does not change at
+runtime and so is kept out of the live monitor panel. Security state
+(Secure Boot, kernel lockdown, OC Lock on Intel), HT/SMT and NUMA
+topology, SMU firmware (AMD); CPU identity with the configured ratio
+ceilings (base, maximum-efficiency and minimum operating ratios) and the
+programmable-limit flags from
+.IR 0xCE ;
+the turbo ratio limit bins; thermal configuration (TjMax and the
+TCC/PROCHOT offset); the RAPL power limits (PL1/PL2 with time windows and
+lock) and the package power envelope (TDP, minimum, maximum); the
+per-DIMM memory configuration; and the cache topology. The MSR-backed
+blocks degrade individually without the
+.B msr
+module; the sysfs and SMBIOS blocks always print.
+.TP
+.B vid
+Print per-core voltage detail. On Intel this is the VID request read per
+core from MSR 0x198[47:32] \(em the voltage the PCU asks the regulator
+for. It is a target, not a measurement: load-line droop is not included,
+and true rail telemetry is only reachable via BMC/PMBus. Per-core values
+can differ where firmware programs cores individually; package-scope
+parts report one value for every core. On AMD the command prints measured
+per-rail voltages where a mapped board Super I/O sensor or the ryzen_smu
+SVI3 telemetry is available, otherwise the P-state nominal value.
+The former name
 .B vcore
-Print per-core (or per-rail, where a board Super I/O sensor driver is
-available) core voltage. On Intel this is the VID request read from MSR
-0x198 (the regulator target; load-line droop is not included), not a
-measured voltage.
+is accepted as a deprecated alias.
 .TP
 .B uncore
 Print per-domain uncore (mesh) frequency limits in MHz. Where the
@@ -174,7 +205,13 @@ Two-second sampling window:
 Refresh every 3 seconds:
 .B sudo watch \-n 3 sckoc
 .TP
-Intel Vcore field on all sockets:
+Platform configuration and power limits:
+.B sudo sckoc info
+.TP
+Per-core VID / rail voltage:
+.B sudo sckoc vid
+.TP
+Intel VID field on all sockets:
 .B sudo sckoc dump 0x198 47:32
 .TP
 AMD P-state 0 definition:
