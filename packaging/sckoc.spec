@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 Name:           sckoc
-Version:        2.2.1
+Version:        2.3.0
 Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
@@ -75,6 +75,20 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Fri Jul 17 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.3.0-1
+- readoc: batch protocol (-p CPU list plus comma-separated registers; one
+  "<cpu> <reg> <value>" line per readable pair) - the monitor now samples
+  all counters for all CPUs in a handful of readoc calls instead of one
+  process per core per register
+- monitor: single shared sampling window (one sleep total, previously one
+  per socket plus one for the per-core table)
+- new --json output (schemas sckoc-mon-v1 and sckoc-uncore-v1) on mon and
+  uncore for scripting and collectors
+- per-core rows within 10 C of TjMax are flagged with an exclamation mark
+- sckoc uncore no longer requires the msr module when the
+  intel-uncore-frequency sysfs driver is present
+- add tests/ regression suite and run it in CI
+
 * Fri Jul 17 2026 SkyWalkerAMD <scka7t@gmail.com> - 2.2.1-1
 - drop obsolete pre-rename file names from the install/uninstall paths;
   rdmsr is no longer removed, so a co-installed msr-tools stays intact

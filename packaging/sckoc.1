@@ -1,14 +1,16 @@
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH SCKOC 1 "July 2026" "sckoc 2.2.1" "User Commands"
+.TH SCKOC 1 "July 2026" "sckoc 2.3.0" "User Commands"
 .SH NAME
 sckoc \- read-only MSR/HSMP hardware monitor for Intel and AMD systems
 .SH SYNOPSIS
 .B sckoc
 .RI [ mon ]
+.RB [ \-\-json ]
 .br
 .B sckoc vcore
 .br
 .B sckoc uncore
+.RB [ \-\-json ]
 .br
 .B sckoc dump
 .I reg
@@ -44,6 +46,11 @@ Print the full monitor panel once. This is the default when no argument is
 given. Combine with
 .BR watch (1)
 for a continuously refreshing display.
+With
+.B \-\-json
+the panel is replaced by a machine-readable JSON document (schema
+sckoc\-mon\-v1) carrying per-socket and per-core essentials. Per-core
+rows within 10\(deC of TjMax are flagged with an exclamation mark.
 .TP
 .B vcore
 Print per-core (or per-rail, where a board Super I/O sensor driver is
@@ -57,6 +64,12 @@ intel-uncore-frequency sysfs driver is available this includes the BIOS
 boot values (initial_*_freq_khz); a mismatch against the current Min/Max
 limits is flagged with an asterisk, revealing limits changed at runtime.
 The MSR and TPMI fallback paths expose no boot values. Intel only.
+With
+.B \-\-json
+a JSON document (schema sckoc\-uncore\-v1) is printed instead. When the
+sysfs driver is present this command works without the
+.B msr
+module.
 .TP
 .B dump \fIreg\fR [\fIhi:lo\fR]
 Read MSR
@@ -97,7 +110,10 @@ readoc found in PATH).
 .SH REQUIREMENTS
 Intel readings need the
 .B msr
-kernel module. AMD temperature readings need
+kernel module (the
+.B uncore
+command alone also works without it when the intel-uncore-frequency
+sysfs driver is present). AMD temperature readings need
 .BR k10temp .
 AMD FCLK and PPT readings need
 .I /dev/hsmp

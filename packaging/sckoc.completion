@@ -11,7 +11,7 @@ _sckoc(){
   local cmd=${words[1]:-}
 
   if [ "$cword" -eq 1 ]; then
-    COMPREPLY=($(compgen -W "mon vcore uncore dump uninstall version help -V -h --help" -- "$cur"))
+    COMPREPLY=($(compgen -W "mon vcore uncore dump uninstall version help --json -V -h --help" -- "$cur"))
     return
   fi
 
@@ -36,6 +36,9 @@ _sckoc(){
         COMPREPLY=($(compgen -W "63:32 47:32 31:16 31:0 21:15 15:0 14:8 7:0 6:0" -- "$cur"))
         declare -F __ltrim_colon_completions >/dev/null 2>&1 && __ltrim_colon_completions "$cur"
       fi
+      return ;;
+    mon|uncore)
+      [ "$cword" -eq 2 ] && COMPREPLY=($(compgen -W "--json" -- "$cur"))
       return ;;
     uninstall)
       [ "$cword" -eq 2 ] && COMPREPLY=($(compgen -W "-y" -- "$cur"))
