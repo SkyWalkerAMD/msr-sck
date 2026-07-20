@@ -4,7 +4,7 @@
 
 面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控软件。`sckoc` 一条命令给出每 Socket 与每核心两层实时视图，覆盖电压、温度、频率、功耗与 C-state 驻留；`sckoc info` 给出完整的静态平台报告（安全状态、CPU 配置比率、功率墙、内存与缓存等）。软件采用纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
 
-**当前版本: 3.0.0**
+**当前版本: 3.0.7**
 
 ## 设计原则
 
@@ -47,9 +47,9 @@ Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 unc
 
 ## AMD 平台说明
 
-**Vcore**：AMD 无架构级电压 MSR。默认读数为当前 P-state 的 VID 解码值，即 CPU 向 VRM 请求的**标称电压**，非 SVI 遥测实测值。换算 fam 1Ah 用 `V = 0.250 + VID×5mV`，fam 17h SVI2 用 `V = 1.55 − VID×6.25mV`，fam 19h 因 Zen3/Zen4 混布不做猜测显示 N/A。
+**Vcore 与 VID**：AMD 无架构级电压 MSR。默认读数（面板标注 `VID`）为当前 P-state 的 VID 解码值，即 CPU 向 VRM 请求的**标称电压**，非 SVI 遥测实测值。换算 fam 1Ah 用 `V = 0.250 + VID×5mV`，fam 17h SVI2 用 `V = 1.55 − VID×6.25mV`，fam 19h 因 Zen3/Zen4 混布不做猜测显示 N/A。
 
-需要注意 fam 1Ah（Zen5）的 P-state VID 是全 socket 单一值，**不等于**双 rail BIOS 设置。对已收录的主板，sckoc 改从板载 Super I/O 读取真实的每 rail 电压。目前已收录 **ASUS Pro WS WRX90E-SAGE SE**（nct6798，`VDDCR_CPU0`=in0、`VDDCR_CPU1`=in6，经 BIOS 电压覆盖增量测试确认），此时 socket 行直接显示两路真实电压。其他主板回退到 P-state 标称值并标注。若需要 SVI 遥测实测，可安装 zenpower/ryzen_smu。
+需要注意 fam 1Ah（Zen5）的 P-state VID 是全 socket 单一值，**不等于**双 rail BIOS 设置。对已收录的主板，sckoc 改从板载 Super I/O 读取真实的每 rail 电压。目前已收录 **ASUS Pro WS WRX90E-SAGE SE**（nct6798，`VDDCR_CPU0`=in0、`VDDCR_CPU1`=in6，经 BIOS 电压覆盖增量测试确认），此时 socket 行直接显示两路真实电压。其他主板回退到 P-state 标称值（面板标注 `VID`）。若需要 SVI 遥测实测，可安装 zenpower/ryzen_smu。
 
 **每核温度**：AMD 无每核 DTS，温度由 SMU 按 CCD 汇总。per-core 表按核所属 CCD 显示温度，CCD 编号经 L3 拓扑步进归一化（fam26 每 CCD 含两 CCX，L3-id 隔号，已修正为连续 0~N）。若内核 k10temp 尚未提供该型号的 per-CCD 传感器（如 fam26/Zen5 sTR5 在内核 6.8），则回退显示 socket 级 Tctl 并以 `*` 标记。
 
@@ -75,11 +75,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/install.sh | sudo
 
 ```bash
 # Fedora：下载与你的版本匹配的 fcNN 包（示例为 Fedora 44，文件名以 Releases 页实际为准）
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.0/sckoc-3.0.0-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.7/sckoc-3.0.7-1.fc44.x86_64.rpm
 # Rocky / Alma / RHEL / CentOS Stream：下载对应 elN 包（示例为 EL8）；更推荐方式三的 COPR，自动匹配发行版
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.0/sckoc-3.0.0-1.el8.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.7/sckoc-3.0.7-1.el8.x86_64.rpm
 # Ubuntu / Debian
-sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.0/sckoc_3.0.0-1_amd64.deb
+sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.7/sckoc_3.0.7-1_amd64.deb
 ```
 
 注：RPM 二进制包与构建它的发行版绑定（glibc/依赖不同），fcNN 包装不进 RHEL 系，elN 包也装不进 Fedora，请按发行版取对应资产。
@@ -108,7 +108,7 @@ echo "deb [trusted=yes] https://skywalkeramd.github.io/sckoc/apt stable main" | 
 sudo apt update && sudo apt install sckoc
 ```
 
-注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-3.0.0.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
+注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-3.0.7.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
 
 ## 使用
 
@@ -130,8 +130,8 @@ sudo watch -n 3 sckoc         # 持续刷新
 各子命令说明：
 
 - `mon`（默认）：关键实时面板（每 Socket 概览 + CPU 区块 + 每核心表）；逐核温度距 TjMax 不足 10°C 的行以 `!` 标出；加 `--json` 输出机器可读 v1（schema `sckoc-mon-v1`，含 socket 与逐核核心字段，不随文本面板瘦身变化）
-- `info`：完整静态平台报告（不随负载变、从 mon 面板移出按需查看）——安全状态（Secure Boot / lockdown / OC Lock / HT(SMT) / NUMA / SMU 固件）、CPU 型号与配置比率上限（base / 最高能效 / 最低比率）及 0xCE 可编程位、Turbo 比率限制 bins、热配置（TjMax 与 TCC/PROCHOT 偏移）、RAPL 功率墙（含时间窗与锁）与封装功耗封套（TDP/最小/最大）、逐 DIMM 内存配置、缓存拓扑；MSR 相关块无 msr 模块时各自降级
-- `vid`：Intel 显示逐核 `0x198` VID 请求电压（PCU/FIVR 目标值，未含掉压，非实测；固件按核编程时各核可不同，包级平台各核同值），AMD 显示逐 rail 真实电压（已收录主板）或 P-state 标称值。原名 `vcore` 保留为弃用别名
+- `info`：完整静态平台报告（不随负载变、从 mon 面板移出按需查看）——安全状态（Secure Boot / lockdown / OC Lock / HT(SMT) / NUMA / SMU 固件）、CPU 型号与配置比率上限（base / 最高能效 / 最低比率）及 0xCE 可编程位、Turbo 比率限制 bins、热配置（TjMax 与 TCC/PROCHOT 偏移）、RAPL 功率墙（含时间窗与锁）与封装功耗封套（TDP/最小/最大）、逐 DIMM 内存配置（SMBIOS 槽位标注无信息、全部相同时，以 BMC 的 DIMM 温度传感器还原真实插槽名并标注 `(bmc)`，同时逐条显示当前温度）、缓存拓扑；MSR 相关块无 msr 模块时各自降级
+- `vid`：Intel 显示逐核 `0x198` VID 请求电压（PCU/FIVR 目标值，未含掉压，非实测；固件按核编程时各核可不同，包级平台各核同值），AMD 显示逐 rail 真实电压（已收录主板，标注 `Vcore`）或 P-state 标称值（标注 `VID`）。原名 `vcore` 保留为弃用别名
 - `uncore`：逐 domain 显示 uncore/mesh 频率限制（仅 Intel）；sysfs 路径下同时显示 BIOS 开机值（`initial_*_freq_khz`），运行时限制被改过会以 `*` 标出；MSR/TPMI 降级路径无开机值概念，该两列显示 `-`；加 `--json` 输出 `sckoc-uncore-v1`；sysfs 驱动可用时本命令不依赖 msr 模块
 - `dump <reg> [hi:lo]`：在每个 socket 上读取指定 MSR，可选 `hi:lo` 只取位段，例如 `dump 0x198 47:32`
 - `uninstall [-y]`：自动识别安装方式并完整卸载，`-y` 跳过确认
@@ -158,7 +158,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/uninstall.sh | su
 
 ## 依赖与权限
 
-需要 root 与 `msr` 内核模块（安装器已处理；`sckoc uncore` 在 intel-uncore-frequency sysfs 驱动可用时不依赖 msr 模块）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp，电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景与 TPMI MMIO 降级路径（见 Intel 平台说明）外，全部功能在 Secure Boot + lockdown=integrity 下可用；DKMS 模块在 Secure Boot 下需 MOK 签名。
+需要 root 与 `msr` 内核模块（安装器已处理；`sckoc uncore` 在 intel-uncore-frequency sysfs 驱动可用时不依赖 msr 模块）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp；k10temp 覆盖不到时（如老内核配新 CPU），若装有 ipmitool 且 BMC 应答，自动改经 IPMI 边带读取 CPU 温度并标注 `(bmc)`。电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景与 TPMI MMIO 降级路径（见 Intel 平台说明）外，全部功能在 Secure Boot + lockdown=integrity 下可用；DKMS 模块在 Secure Boot 下需 MOK 签名。
 
 ## 项目状态
 
