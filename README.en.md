@@ -4,7 +4,7 @@
 
 A **read-only** hardware monitor for Intel and AMD servers and workstations. A single `sckoc` command gives a live per-socket and per-core view covering voltage, temperature, frequency, power and C-state residency; `sckoc info` adds the full static platform report (security state, CPU ratio configuration, power limits, memory and cache). The tool is pure-read by design: it never writes a single MSR, so it works under Secure Boot and kernel lockdown (integrity mode).
 
-**Current version: 3.0.7**
+**Current version: 3.0.0**
 
 ## Design principles
 
@@ -47,9 +47,9 @@ Everything on Intel relies only on the in-kernel `msr` module plus the optional 
 
 ## AMD platform notes
 
-**Vcore vs VID**: AMD has no architectural voltage MSR. The default reading (labelled `VID` on the panel) is the current P-state's decoded VID, i.e. the **nominal voltage** the CPU requests from the VRM, not SVI telemetry. Conversion: fam 1Ah uses `V = 0.250 + VID×5 mV`, fam 17h SVI2 uses `V = 1.55 − VID×6.25 mV`; fam 19h mixes Zen3/Zen4 encodings so sckoc shows N/A rather than guess.
+**Vcore**: AMD has no architectural voltage MSR. The default reading is the current P-state's decoded VID, i.e. the **nominal voltage** the CPU requests from the VRM, not SVI telemetry. Conversion: fam 1Ah uses `V = 0.250 + VID×5 mV`, fam 17h SVI2 uses `V = 1.55 − VID×6.25 mV`; fam 19h mixes Zen3/Zen4 encodings so sckoc shows N/A rather than guess.
 
-Note that on fam 1Ah (Zen5) the P-state VID is a single socket-wide value and does **not** equal the dual-rail BIOS settings. For boards in the support table, sckoc instead reads the real per-rail voltages from the board Super I/O. Currently listed: **ASUS Pro WS WRX90E-SAGE SE** (nct6798, `VDDCR_CPU0`=in0, `VDDCR_CPU1`=in6, confirmed by BIOS voltage-offset delta testing); on that board the socket line shows both real rails. Other boards fall back to the P-state nominal value, labelled `VID`. For SVI telemetry, install zenpower/ryzen_smu.
+Note that on fam 1Ah (Zen5) the P-state VID is a single socket-wide value and does **not** equal the dual-rail BIOS settings. For boards in the support table, sckoc instead reads the real per-rail voltages from the board Super I/O. Currently listed: **ASUS Pro WS WRX90E-SAGE SE** (nct6798, `VDDCR_CPU0`=in0, `VDDCR_CPU1`=in6, confirmed by BIOS voltage-offset delta testing); on that board the socket line shows both real rails. Other boards fall back to the labelled P-state nominal value. For SVI telemetry, install zenpower/ryzen_smu.
 
 **Per-core temperature**: AMD has no per-core DTS; the SMU aggregates temperature per CCD. The per-core table shows each core's CCD temperature, with CCD numbers normalised through the L3 topology stride (fam26 packs two CCX per CCD with alternating L3 ids, corrected to a contiguous 0…N). If the kernel's k10temp does not yet expose per-CCD sensors for the part (e.g. fam26/Zen5 sTR5 on kernel 6.8), sckoc falls back to the socket Tctl and marks it `*`.
 
@@ -75,11 +75,11 @@ Self-contained: installs dependencies (gcc, dmidecode), compiles the helpers, de
 
 ```bash
 # Fedora: pick the fcNN package matching your release (example: Fedora 44; use the actual filename from the Releases page)
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.7/sckoc-3.0.7-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.0/sckoc-3.0.0-1.fc44.x86_64.rpm
 # Rocky / Alma / RHEL / CentOS Stream: pick the matching elN package (example: EL8); the COPR in option 3 is preferred as it matches your distro automatically
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.7/sckoc-3.0.7-1.el8.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.0/sckoc-3.0.0-1.el8.x86_64.rpm
 # Ubuntu / Debian
-sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.7/sckoc_3.0.7-1_amd64.deb
+sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.0/sckoc_3.0.0-1_amd64.deb
 ```
 
 Note: RPM binaries are tied to the distro that built them (glibc and dependencies differ); fcNN packages do not install on RHEL-family systems and vice versa — pick the asset matching your distribution.
@@ -108,7 +108,7 @@ echo "deb [trusted=yes] https://skywalkeramd.github.io/sckoc/apt stable main" | 
 sudo apt update && sudo apt install sckoc
 ```
 
-Note: both COPR and the apt repo are third-party repositories — adding the source once is the distro's third-party trust mechanism; afterwards `dnf/apt install sckoc` and upgrades behave like any other package. Self-building: deb via `bash packaging/build-deb.sh` (run from the repo root); rpm by fetching the source tarball first: `spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec` (or download Source code (tar.gz) from Releases into `~/rpmbuild/SOURCES/sckoc-3.0.7.tar.gz`). Package installs auto-probe and load k10temp/HSMP modules on AMD but **never run DKMS builds**; platforms that need DKMS (TR PRO 9000WX) should use install.sh or configure it once by hand as described above.
+Note: both COPR and the apt repo are third-party repositories — adding the source once is the distro's third-party trust mechanism; afterwards `dnf/apt install sckoc` and upgrades behave like any other package. Self-building: deb via `bash packaging/build-deb.sh` (run from the repo root); rpm by fetching the source tarball first: `spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec` (or download Source code (tar.gz) from Releases into `~/rpmbuild/SOURCES/sckoc-3.0.0.tar.gz`). Package installs auto-probe and load k10temp/HSMP modules on AMD but **never run DKMS builds**; platforms that need DKMS (TR PRO 9000WX) should use install.sh or configure it once by hand as described above.
 
 ## Usage
 
@@ -130,8 +130,8 @@ Tab completion covers the subcommands (mon/info/vid/uncore/dump/uninstall/help/v
 Subcommands:
 
 - `mon` (default): the key live panel (per-socket overview + CPU block + per-core table); per-core rows within 10 °C of TjMax are flagged with `!`; with `--json` prints a machine-readable v1 document (schema `sckoc-mon-v1`) carrying the socket and per-core essentials, unaffected by the text-panel slimming
-- `info`: the full static platform report (everything runtime-invariant, kept out of the live panel) - security state (Secure Boot / lockdown / OC Lock / HT(SMT) / NUMA / SMU firmware), CPU identity with the configured ratio ceilings (base / max-efficiency / min) and the 0xCE programmable flags, turbo ratio limit bins, thermal config (TjMax and TCC/PROCHOT offset), RAPL power limits (with time windows and lock) and the package power envelope (TDP/min/max), per-DIMM memory config (when the SMBIOS locators carry no information - all identical - the real slot names are recovered from the BMC DIMM temperature sensors and labelled `(bmc)`, with each module's current temperature shown) and cache topology; the MSR-backed blocks degrade individually without the msr module
-- `vid`: Intel shows the per-core `0x198` VID request voltage (the PCU/FIVR target, droop not included — not a measurement; cores can differ where firmware programs them individually, package-scope parts show one value); AMD shows real per-rail voltages (supported boards, labelled `Vcore`) or the P-state nominal value (labelled `VID`). The former name `vcore` remains as a deprecated alias
+- `info`: the full static platform report (everything runtime-invariant, kept out of the live panel) - security state (Secure Boot / lockdown / OC Lock / HT(SMT) / NUMA / SMU firmware), CPU identity with the configured ratio ceilings (base / max-efficiency / min) and the 0xCE programmable flags, turbo ratio limit bins, thermal config (TjMax and TCC/PROCHOT offset), RAPL power limits (with time windows and lock) and the package power envelope (TDP/min/max), per-DIMM memory config and cache topology; the MSR-backed blocks degrade individually without the msr module
+- `vid`: Intel shows the per-core `0x198` VID request voltage (the PCU/FIVR target, droop not included — not a measurement; cores can differ where firmware programs them individually, package-scope parts show one value); AMD shows real per-rail voltages (supported boards) or the P-state nominal value. The former name `vcore` remains as a deprecated alias
 - `uncore`: per-domain uncore/mesh frequency limits (Intel only); on the sysfs path it also shows the BIOS boot values (`initial_*_freq_khz`) and flags runtime-changed limits with `*`; the MSR/TPMI fallback paths have no boot-value concept and show `-` in those columns; with `--json` prints schema `sckoc-uncore-v1`; when the sysfs driver is present this command works without the msr module
 - `dump <reg> [hi:lo]`: read the given MSR on every socket, optionally extracting the `hi:lo` bitfield, e.g. `dump 0x198 47:32`
 - `uninstall [-y]`: detects how sckoc was installed and removes it completely; `-y` skips confirmation
@@ -158,7 +158,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/uninstall.sh | su
 
 ## Requirements and permissions
 
-Needs root and the `msr` kernel module (handled by the installer; `sckoc uncore` works without the msr module when the intel-uncore-frequency sysfs driver is present). Mesh/IOD frequency needs the `intel-uncore-frequency(-tpmi)` driver (kernel 5.6+/6.5+, backported to RHEL 9). AMD FCLK/PPT etc. need `/dev/hsmp`: in-kernel `amd_hsmp` on EPYC (5.18+), DKMS `hsmp_acpi` on Threadripper PRO 9000WX (installer handles it), both requiring HSMP enabled in BIOS. AMD temperature needs k10temp; where k10temp cannot cover the CPU (e.g. old kernels with new parts), a responding BMC is read over the IPMI side-band via ipmitool instead, labelled `(bmc)`. Voltage rails and real Vcore need a board Super I/O driver (nct6775 etc., auto-probed by the installer). Everything except the DKMS cases and the TPMI MMIO fallback path (see Intel platform notes) works under Secure Boot + lockdown=integrity; DKMS modules need MOK signing under Secure Boot.
+Needs root and the `msr` kernel module (handled by the installer; `sckoc uncore` works without the msr module when the intel-uncore-frequency sysfs driver is present). Mesh/IOD frequency needs the `intel-uncore-frequency(-tpmi)` driver (kernel 5.6+/6.5+, backported to RHEL 9). AMD FCLK/PPT etc. need `/dev/hsmp`: in-kernel `amd_hsmp` on EPYC (5.18+), DKMS `hsmp_acpi` on Threadripper PRO 9000WX (installer handles it), both requiring HSMP enabled in BIOS. AMD temperature needs k10temp; voltage rails and real Vcore need a board Super I/O driver (nct6775 etc., auto-probed by the installer). Everything except the DKMS cases and the TPMI MMIO fallback path (see Intel platform notes) works under Secure Boot + lockdown=integrity; DKMS modules need MOK signing under Secure Boot.
 
 ## Project status
 
