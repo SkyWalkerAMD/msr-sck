@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 Name:           sckoc
-Version:        3.0.8
+Version:        3.0.9
 Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
@@ -76,6 +76,13 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.9-1
+- completion: keep the dump register completion working on old bash (EL7 is
+  4.2) - the case-insensitive match no longer uses the bash 4.0 ${var,,}
+  expansion, using tr + a case glob and an explicit array instead
+- install: when the bash-completion package is not detected, say so and
+  point at "source /etc/bash_completion.d/sckoc" for the current shell
+
 * Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.8-1
 - mon/info (AMD BMC): fix the per-DIMM temperature path - the SDR sensor
   name is kept in full for the "sdr get" fallback (stripping _Temp only for
