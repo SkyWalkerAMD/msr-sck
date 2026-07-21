@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/badge/license-GPL--2.0-blue)](COPYING)
 ![language](https://img.shields.io/badge/language-Bash%20%2B%20C-orange)
 [![stars](https://img.shields.io/github/stars/SkyWalkerAMD/sckoc?logo=github&label=Stars)](https://github.com/SkyWalkerAMD/sckoc/stargazers)
-[![downloads](https://img.shields.io/github/downloads/SkyWalkerAMD/sckoc/total?label=downloads&color=brightgreen)](https://github.com/SkyWalkerAMD/sckoc/releases)
+[![downloads](https://img.shields.io/github/downloads/SkyWalkerAMD/sckoc/total?label=downloads&color=brightgreen&cacheSeconds=3600)](https://github.com/SkyWalkerAMD/sckoc/releases)
 [![issues](https://img.shields.io/github/issues/SkyWalkerAMD/sckoc?label=issues&color=yellow)](https://github.com/SkyWalkerAMD/sckoc/issues)
 
 [English](README.en.md) | 中文
