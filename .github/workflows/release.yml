@@ -3,15 +3,41 @@ name: release
 
 on:
   push:
-    tags: ["*"]
+    branches: ["main"]          # 日常 push: 只跑 tests(其余 job 有 tag/dispatch 条件)
+    tags: ["*"]                 # 打 tag: tests 通过后构建并发布
+  pull_request:                 # PR: 只跑 tests,合并前就暴露问题
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"        # 每周一跑一次 tests:runner 环境漂移(镜像升级、locale
+                                # 变化等)在无提交的静默期也能被发现,而不是攒到发版才炸
 
+# 默认最小权限:tests 与构建只需 checkout(read)。
+# 需要写 Release / gh-pages 的两个发布 job 在 job 级单独提权。
 permissions:
-  contents: write
+  contents: read
+
+# 分支/PR 维度:同一 ref 连续推送时取消上一条还在跑的(最新代码优先,省 runner);
+# tag 维度:cancel-in-progress 对 tag 关闭,发布流水线绝不中途取消。
+# 跨 tag 的 gh-pages 竞态由 apt-repo 的 job 级 concurrency 单独防护。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
-  build-deb:
+  tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run regression suite
+        run: sudo bash tests/run.sh
+
+  build-deb:
+    needs: tests
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -30,10 +56,17 @@ jobs:
         with:
           name: deb
           path: "*.deb"
+          retention-days: 7     # 中间产物;正式资产随 Release 永久保存
 
   build-rpm:
+    needs: tests
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      # 一个发行版构建失败不取消其余:release 反正会因 needs 失败而不发布,
+      # 但"只有 el8 挂"和"全挂"是完全不同的诊断信息,让四个都跑完。
+      fail-fast: false
       matrix:
         include:
           - image: rockylinux:8
@@ -66,9 +99,13 @@ jobs:
         with:
           name: rpm-${{ matrix.label }}
           path: "*.rpm"
+          retention-days: 7
 
   review-srpm:
+    needs: tests
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -96,24 +133,18 @@ jobs:
           path: |
             *.src.rpm
             sckoc.spec
-
-  tests:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run regression suite
-        run: sudo bash tests/run.sh
+          retention-days: 7
 
   release:
     needs:
+      - tests
       - build-deb
       - build-rpm
       - review-srpm
-      - tests
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    permissions:
+      contents: write           # 附加 Release 资产需要
     steps:
       - uses: actions/checkout@v4
 
@@ -130,7 +161,7 @@ jobs:
           else
             LATEST_TAG=$(gh release view --json tagName --template '{{.tagName}}' || echo "")
             if [ -z "$LATEST_TAG" ]; then
-              echo "未找到任何已有的 Release，手動運行失敗。"
+              echo "未找到任何已有的 Release，手动运行失败。"
               exit 1
             fi
             echo "TAG_NAME=$LATEST_TAG" >> $GITHUB_ENV
@@ -142,16 +173,29 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
-          fail_on_unmatched_files: false
+          # 三类资产(deb/rpm/spec)都应存在;缺任何一类说明上游构建有问题,
+          # 宁可让发布失败也不发一个缺资产的 Release。
+          fail_on_unmatched_files: true
           files: |
             *.deb
             *.rpm
             sckoc.spec
 
   apt-repo:
-    needs: build-deb
+    # 必须等 tests:apt 仓库是 force-push 覆盖发布,一旦发出没有"上一版"可回退,
+    # 绝不能在测试失败时把坏包推给 apt 用户。
+    needs:
+      - tests
+      - build-deb
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    permissions:
+      contents: write           # push gh-pages 需要
+    # 跨 tag 串行:workflow 级 concurrency 按 ref 分组,两个 tag 会并行,
+    # 唯一共享的可变目标是 gh-pages 的 apt 目录,在这里单独排队。
+    concurrency:
+      group: apt-repo-publish
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
