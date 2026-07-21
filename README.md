@@ -4,7 +4,7 @@
 
 面向 Intel 与 AMD 服务器和工作站的**只读**硬件监控软件。`sckoc` 一条命令给出每 Socket 与每核心两层实时视图，覆盖电压、温度、频率、功耗与 C-state 驻留；`sckoc info` 给出完整的静态平台报告（安全状态、CPU 配置比率、功率墙、内存与缓存等）。软件采用纯读取设计，全程不写入任何 MSR，因此在 Secure Boot 与 kernel lockdown (integrity) 环境下均可正常工作。
 
-**当前版本: 3.0.9**
+**当前版本: 3.0.12**
 
 ## 设计原则
 
@@ -27,7 +27,9 @@
 - VID 请求电压（Intel `0x198`）；AMD 视主板可显示真实双 rail 电压或 P-state 标称值，详见下方说明
 - 最热核心温度（TjMax 对照）、包级 PC2/PC6 驻留率、节流标志（THROTTLING / PROCHOT）
 - Core 当前频率（基准频率显示在 CPU 区块），Mesh 与 IOD-S/IOD-N 多域 uncore 当前频率（Min/Max 限值与 BIOS 开机值见 `sckoc uncore`）
-- DRAM 频率与电压（SMBIOS）、DRAM 功耗（Intel RAPL）、DDR 带宽利用率（AMD HSMP）
+- 逐核 IRQ 列：该核在采样区间内服务的中断数（读 `/proc/interrupts` 全部中断源求和，SMT 时并计兄弟线程），类似 turbostat 的 IRQ 列；纯只读、无需驱动
+- 内存 Mem Max：per-socket 摘要行显示最热一根内存的温度（BMC 暴露 DIMM 传感器时，取占用槽最高值），与 CPU 的 Temp Max 平行
+- DRAM 实际运行频率（SMBIOS）、DRAM 功耗（Intel RAPL）、DDR 带宽利用率（AMD HSMP）
 - Pkg 功耗（RAPL）、PPT 功率墙（AMD）、FCLK/MCLK、Fmax/Fmin、CCLK Limit、C0%（AMD）
 - 板载电压 Rails（Super I/O 驱动如 nct6775）
 
@@ -57,7 +59,7 @@ Intel 平台的全部功能仅依赖内核自带的 `msr` 模块与可选的 unc
 
 **消费级 Ryzen / 老内核（ryzen_smu 后备数据源）**：桌面 Ryzen（如 Ryzen 9000）没有 HSMP，FCLK/PPT 无法经 `/dev/hsmp` 获取；较老的内核（如 Ubuntu 22.04 的 5.15）的 k10temp 也不认识新 CPU family，温度同样读不到。此时可安装 out-of-tree 的 [ryzen_smu](https://github.com/kylon/ryzen_smu) 驱动（DKMS），sckoc 检测到 `/sys/kernel/ryzen_smu_drv/pm_table` 且表版本与已验证布局匹配时，自动以**只读**方式从 SMU PM table 补齐 socket/CCD 温度、FCLK/MCLK、PPT、SMU 固件版本与 SVI3 电压遥测（`sckoc vid` 显示 VDDCR_CPU/SOC/VDDIO_MEM 等 rail），相应数值以 `(smu)` 标注；表版本不匹配则维持 `N/A`，绝不猜测。已验证平台：Granite Ridge（Ryzen 9000，表版本 0x620205）。注意：ryzen_smu 为第三方模块，非 sckoc 依赖，需自行安装；**5.18 之前的内核**编译该模块需追加 `-std=gnu11`（内核构建默认 gnu89 会报 `'for' loop initial declarations` 错误），可在其 dkms.conf 的 `CFLAGS_MODULE+=` 处补上。
 
-**DRAM 行的电压说明**：`DRAM ... @ x.x V` 中的电压来自 SMBIOS（dmidecode），为固件填写的 JEDEC 标称值（DDR5 恒为 1.1 V），**不反映 EXPO/XMP 实际设定**；实际内存接口电压见 `sckoc vid` 的 `VDDIO_MEM`（需 ryzen_smu）。
+**内存显示说明**：监控面板（`sckoc mon`）的 DRAM 行只显示实际运行频率；此前附带的 SMBIOS 名义电压（`@ x.x V`）是固件填写的 JEDEC 标称值（DDR5 恒为 1.1 V），**不反映 EXPO/XMP 实际设定**，已移除。`sckoc info` 的逐 DIMM 段改为表格形式（仿 `sckoc mon` 的 Per-core 排版：一行表头、每字段独立成列）：DIMM、Speed（实际运行频率）、JEDEC（标称频率）、VDDQ（**实测**电压）、Size（容量），BMC 暴露 DIMM 温度传感器时再加一列 Temp。VDDQ 经 BMC/IPMI（ipmitool）从 `DRAM VDDQ Volt.` 一类的电压传感器读取真实值（需该传感器存在；单一轨压，各行相同）；VDDQ 与 Temp 两列在无对应传感器时自动省去。若装有 ryzen_smu，`sckoc vid` 的 `VDDIO_MEM` 也可作内存接口电压来源。
 
 ## 安装
 
@@ -75,11 +77,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/install.sh | sudo
 
 ```bash
 # Fedora：下载与你的版本匹配的 fcNN 包（示例为 Fedora 44，文件名以 Releases 页实际为准）
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.9/sckoc-3.0.9-1.fc44.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.12/sckoc-3.0.12-1.fc44.x86_64.rpm
 # Rocky / Alma / RHEL / CentOS Stream：下载对应 elN 包（示例为 EL8）；更推荐方式三的 COPR，自动匹配发行版
-sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.9/sckoc-3.0.9-1.el8.x86_64.rpm
+sudo dnf install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.12/sckoc-3.0.12-1.el8.x86_64.rpm
 # Ubuntu / Debian
-sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.9/sckoc_3.0.9-1_amd64.deb
+sudo apt install -y https://github.com/SkyWalkerAMD/sckoc/releases/download/3.0.12/sckoc_3.0.12-1_amd64.deb
 ```
 
 注：RPM 二进制包与构建它的发行版绑定（glibc/依赖不同），fcNN 包装不进 RHEL 系，elN 包也装不进 Fedora，请按发行版取对应资产。
@@ -108,7 +110,7 @@ echo "deb [trusted=yes] https://skywalkeramd.github.io/sckoc/apt stable main" | 
 sudo apt update && sudo apt install sckoc
 ```
 
-注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-3.0.9.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
+注：COPR 与 apt 均为第三方仓库，需先添加源再安装，这是发行版的第三方源信任机制，添加一次之后 `dnf/apt install sckoc` 与后续升级即和普通软件一致。自行构建：deb 用 `bash packaging/build-deb.sh`（仓库根目录执行）；rpm 先取源码包再构建：`spectool -g -R packaging/sckoc.spec && rpmbuild -ba packaging/sckoc.spec`（或从 Releases 下载 Source code (tar.gz) 放入 `~/rpmbuild/SOURCES/sckoc-3.0.12.tar.gz`）。软件包安装时在 AMD 平台自动探测加载 k10temp/HSMP 模块，但**不执行 DKMS 编译**，TR PRO 9000WX 等需 DKMS 的平台请用 install.sh 或参照上节手动配置一次。
 
 ## 使用
 
@@ -130,7 +132,7 @@ sudo watch -n 3 sckoc         # 持续刷新
 各子命令说明：
 
 - `mon`（默认）：关键实时面板（每 Socket 概览 + CPU 区块 + 每核心表）；逐核温度距 TjMax 不足 10°C 的行以 `!` 标出；加 `--json` 输出机器可读 v1（schema `sckoc-mon-v1`，含 socket 与逐核核心字段，不随文本面板瘦身变化）
-- `info`：完整静态平台报告（不随负载变、从 mon 面板移出按需查看）——安全状态（Secure Boot / lockdown / OC Lock / HT(SMT) / NUMA / SMU 固件）、CPU 型号与配置比率上限（base / 最高能效 / 最低比率）及 0xCE 可编程位、Turbo 比率限制 bins、热配置（TjMax 与 TCC/PROCHOT 偏移）、RAPL 功率墙（含时间窗与锁）与封装功耗封套（TDP/最小/最大）、逐 DIMM 内存配置（SMBIOS 槽位标注无信息、全部相同时，以 BMC 的 DIMM 温度传感器还原真实插槽名并标注 `(bmc)`，同时逐条显示当前温度）、缓存拓扑；MSR 相关块无 msr 模块时各自降级
+- `info`：完整静态平台报告（不随负载变、从 mon 面板移出按需查看）——安全状态（Secure Boot / lockdown / OC Lock / HT(SMT) / NUMA / SMU 固件）、CPU 型号与配置比率上限（base / 最高能效 / 最低比率）及 0xCE 可编程位、Turbo 比率限制 bins、热配置（TjMax 与 TCC/PROCHOT 偏移）、RAPL 功率墙（含时间窗与锁）与封装功耗封套（TDP/最小/最大）、逐 DIMM 内存配置（BMC 暴露 DIMM 温度传感器时逐条显示温度：SMBIOS 槽名无信息、全部相同时以 BMC 传感器名还原真实槽名；槽名有效时保留 SMBIOS 名、按槽位标识 `DIMMA1↔CPU0_DIMM_A1` 匹配追加温度）、缓存拓扑；MSR 相关块无 msr 模块时各自降级
 - `vid`：Intel 显示逐核 `0x198` VID 请求电压（PCU/FIVR 目标值，未含掉压，非实测；固件按核编程时各核可不同，包级平台各核同值），AMD 显示逐 rail 真实电压（已收录主板，标注 `Vcore`）或 P-state 标称值（标注 `VID`）。原名 `vcore` 保留为弃用别名
 - `uncore`：逐 domain 显示 uncore/mesh 频率限制（仅 Intel）；sysfs 路径下同时显示 BIOS 开机值（`initial_*_freq_khz`），运行时限制被改过会以 `*` 标出；MSR/TPMI 降级路径无开机值概念，该两列显示 `-`；加 `--json` 输出 `sckoc-uncore-v1`；sysfs 驱动可用时本命令不依赖 msr 模块
 - `dump <reg> [hi:lo]`：在每个 socket 上读取指定 MSR，可选 `hi:lo` 只取位段，例如 `dump 0x198 47:32`
@@ -158,7 +160,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/SkyWalkerAMD/sckoc@main/uninstall.sh | su
 
 ## 依赖与权限
 
-需要 root 与 `msr` 内核模块（安装器已处理；`sckoc uncore` 在 intel-uncore-frequency sysfs 驱动可用时不依赖 msr 模块）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp；k10temp 覆盖不到时（如老内核配新 CPU），若装有 ipmitool 且 BMC 应答，自动改经 IPMI 边带读取 CPU 温度并标注 `(bmc)`。电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景与 TPMI MMIO 降级路径（见 Intel 平台说明）外，全部功能在 Secure Boot + lockdown=integrity 下可用；DKMS 模块在 Secure Boot 下需 MOK 签名。
+需要 root 与 `msr` 内核模块（安装器已处理；`sckoc uncore` 在 intel-uncore-frequency sysfs 驱动可用时不依赖 msr 模块）。Mesh/IOD 频率需要 `intel-uncore-frequency(-tpmi)` 驱动（内核 5.6+/6.5+，RHEL 9 系已回移）。AMD FCLK/PPT 等需要 `/dev/hsmp`，EPYC 用内核自带 `amd_hsmp`（5.18+），Threadripper PRO 9000WX 用 DKMS `hsmp_acpi`（安装器自动处理），均需 BIOS 开启 HSMP。AMD 温度需 k10temp；k10temp 覆盖不到时（如老内核配新 CPU），若装有 ipmitool 且 BMC 应答，自动改经 IPMI 边带读取 CPU 温度。电压 Rails 与真实 Vcore 需板载 Super I/O 驱动（nct6775 等，安装器自动探测）。除 DKMS 场景与 TPMI MMIO 降级路径（见 Intel 平台说明）外，全部功能在 Secure Boot + lockdown=integrity 下可用；DKMS 模块在 Secure Boot 下需 MOK 签名。
 
 ## 项目状态
 

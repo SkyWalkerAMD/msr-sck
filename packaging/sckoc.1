@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH SCKOC 1 "July 2026" "sckoc 3.0.9" "User Commands"
+.TH SCKOC 1 "July 2026" "sckoc 3.0.12" "User Commands"
 .SH NAME
 sckoc \- read-only MSR/HSMP hardware monitor for Intel and AMD systems
 .SH SYNOPSIS
@@ -71,11 +71,16 @@ programmable-limit flags from
 the turbo ratio limit bins; thermal configuration (TjMax and the
 TCC/PROCHOT offset); the RAPL power limits (PL1/PL2 with time windows and
 lock) and the package power envelope (TDP, minimum, maximum); the
-per-DIMM memory configuration (when the SMBIOS locators carry no
-information, the real slot names are recovered from the BMC DIMM
-temperature sensors and labelled
-.IR (bmc) ,
-with each module's current temperature);
+per-DIMM memory configuration, laid out as a table (like the per-core
+panel): a header row, then one aligned row per DIMM giving the actual
+(configured) transfer rate, the JEDEC nominal rate, the measured DRAM
+VDDQ rail (read over
+.I ipmitool
+when the BMC exposes such a sensor; one rail for the whole subsystem) and
+the module size. A further Temp column carries each module's current
+temperature where the BMC exposes DIMM temperature sensors, and where the
+SMBIOS locators carry no information the real slot names are recovered
+from those sensors;
 and the cache topology. The MSR-backed
 blocks degrade individually without the
 .B msr
@@ -155,8 +160,7 @@ sysfs driver is present). AMD temperature readings need
 where it cannot cover the CPU, a responding BMC is read over the IPMI
 side-band via
 .B ipmitool
-instead (sensor names probed once per boot and cached), labelled
-.IR (bmc) .
+instead (sensor names probed once per boot and cached).
 AMD FCLK and PPT readings need
 .I /dev/hsmp
 (the

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 Name:           sckoc
-Version:        3.0.9
+Version:        3.0.12
 Release:        1%{?dist}
 Summary:        Read-only hardware monitor for Intel/AMD servers
 License:        GPL-2.0-only
@@ -76,6 +76,26 @@ if [ "$1" = 0 ]; then rm -f /etc/modules-load.d/sckoc-amd.conf; fi
 %ghost %{_sysconfdir}/modules-load.d/sckoc-amd.conf
 
 %changelog
+* Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.12-1
+- mon: the per-socket DRAM line now shows Mem Max, the hottest populated DIMM
+  temperature from the BMC (parallels the CPU Temp Max), labelled (bmc)
+- install: try to install ipmitool alongside dmidecode (best-effort, never
+  fails the install) so the BMC temperature path works out of the box
+
+* Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.11-1
+- info: show per-DIMM temperature whenever the BMC exposes DIMM sensors, not
+  only on boards with blank SMBIOS locators. With meaningful locators the
+  SMBIOS slot name is kept and the BMC temperature is matched by slot
+  designator (DIMMA1 <-> CPU0_DIMM_A1) and appended, labelled (bmc); the
+  name-substitution path for all-identical locators is unchanged. Boards
+  whose BMC has no DIMM sensors are untouched
+
+* Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.10-1
+- mon: add an IRQ column to the per-core table - interrupts serviced by each
+  core during the sampling window, summed across all sources in
+  /proc/interrupts (and across SMT threads) over the same T0/T1 window as the
+  other counters. Read-only, no driver needed; IRQSRC overrides the source
+
 * Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.9-1
 - completion: keep the dump register completion working on old bash (EL7 is
   4.2) - the case-insensitive match no longer uses the bash 4.0 ${var,,}
