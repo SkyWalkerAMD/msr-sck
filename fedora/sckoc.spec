@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 Name:           sckoc
-Version:        3.0.12
+Version:        3.1.0
 Release:        %autorelease
 Summary:        Read-only hardware monitor for Intel and AMD servers
 
@@ -72,6 +72,16 @@ test -x %{buildroot}%{_libexecdir}/%{name}/tpmi-uncore
 %{_mandir}/man1/sckoc.1*
 
 %changelog
+* Tue Jul 21 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.1.0-1
+- info: per-DIMM memory reworked as a column table (Speed / JEDEC / VDDQ /
+  Size, plus Temp when the BMC exposes DIMM sensors), mirroring the per-core
+  panel; Speed is the actual configured rate, JEDEC the SMBIOS nominal
+- info: measured DRAM VDDQ rail read from the BMC over ipmitool (new column)
+- mon: DRAM line is rate-only now - the SMBIOS nominal voltage (JEDEC 1.1 V,
+  never the real rail) was dropped
+- output: BMC source labels "(bmc)" removed from the panels
+- tests: temperature assertions made locale-proof (fixes CI under C.UTF-8)
+
 * Mon Jul 20 2026 SkyWalkerAMD <scka7t@gmail.com> - 3.0.12-1
 - mon: the per-socket DRAM line now shows Mem Max, the hottest populated DIMM
   temperature from the BMC (parallels the CPU Temp Max), labelled (bmc)
