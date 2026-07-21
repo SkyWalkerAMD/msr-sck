@@ -1,5 +1,5 @@
 .\" SPDX-License-Identifier: GPL-2.0-only
-.TH SCKOC 1 "July 2026" "sckoc 3.2.0" "User Commands"
+.TH SCKOC 1 "July 2026" "sckoc 4.0.0" "User Commands"
 .SH NAME
 sckoc \- read-only MSR/HSMP hardware monitor for Intel and AMD systems
 .SH SYNOPSIS
@@ -74,9 +74,10 @@ lock) and the package power envelope (TDP, minimum, maximum); the
 per-DIMM memory configuration, laid out as a table (like the per-core
 panel): a header row, then one aligned row per DIMM giving the actual
 (configured) transfer rate, the JEDEC nominal rate, the measured DRAM
-VDDQ rail (read over
+rail (read over
 .I ipmitool
-when the BMC exposes such a sensor; one rail for the whole subsystem) and
+from a BMC sensor named VDDQ or VCCD; one value per memory-controller
+rail, several rails separated by a slash) and
 the module size. A further Temp column carries each module's current
 temperature where the BMC exposes DIMM temperature sensors, and where the
 SMBIOS locators carry no information the real slot names are recovered
