@@ -8,10 +8,10 @@
 # Output:  ~/review-srpm/sckoc.spec  and  ~/review-srpm/sckoc-<V>-1.fc<NN>.src.rpm
 #          (filenames match the Spec/SRPM URLs posted on the review ticket)
 #
-# Speed tip: the container installs rpmdevtools+rpmautospec on every run.
+# Speed tip: the container installs rpmdevtools on every run.
 # To make runs near-instant, bake them into a local image once:
 #   podman run --name t registry.fedoraproject.org/fedora:44 \
-#       dnf install -y rpmdevtools rpmautospec
+#       dnf install -y rpmdevtools
 #   podman commit t localhost/srpm-f44 && podman rm t
 # then run with:  SRPM_IMAGE=localhost/srpm-f44 bash make-review-srpm.sh
 # (the in-container install is skipped automatically when tools exist)
@@ -62,8 +62,8 @@ echo ">> tag content verified (man page + SPDX + current COPYING)"
 
 # ---- 3. build the SRPM in the container (non-interactive) -----------
 podman run --rm -e TAG="$TAG" -v "$PWD":/src:Z "$SRPM_IMAGE" bash -ec '
-  rpm -q rpmdevtools rpmautospec >/dev/null 2>&1 \
-    || dnf install -y -q rpmdevtools rpmautospec
+  rpm -q rpmdevtools >/dev/null 2>&1 \
+    || dnf install -y -q rpmdevtools
   mkdir -p /root/rpmbuild/SOURCES
   cp "/src/sckoc-$TAG.tar.gz" /root/rpmbuild/SOURCES/
   rpmbuild -bs "/src/sckoc-$TAG/fedora/sckoc.spec"
